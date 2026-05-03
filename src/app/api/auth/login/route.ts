@@ -164,6 +164,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ user: { ...userWithoutPassword, effectiveRoles }, token });
   } catch (error: any) {
     console.error('[Login] Server error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Terjadi kesalahan server' }, { status: 500 });
+    // Don't leak raw error messages to client — log to server only
+    return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
   }
 }
