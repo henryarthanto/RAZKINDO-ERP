@@ -1,0 +1,33 @@
+:81 {
+        @transform_port_query {
+                query XTransformPort=*
+        }
+
+        handle @transform_port_query {
+                reverse_proxy localhost:{query.XTransformPort} {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                        transport http {
+                                read_timeout 120s
+                                write_timeout 120s
+                                dial_timeout 10s
+                        }
+                }
+        }
+
+        handle {
+                reverse_proxy localhost:3000 {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                        transport http {
+                                read_timeout 120s
+                                write_timeout 120s
+                                dial_timeout 10s
+                        }
+                }
+        }
+}
