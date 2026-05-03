@@ -370,3 +370,34 @@ Stage Summary:
 - CI/CD: GitHub Actions multi-platform build (ARM64 + AMD64)
 - Casa OS: ready for custom install via docker-compose.yml
 - Installation guide: INSTALL.md with step-by-step instructions
+
+---
+Task ID: fix-docker-login-500
+Agent: Main Agent
+Task: Fix "Unexpected token 'I', Internal Server Error" on Docker/STB login
+
+Work Log:
+- Error: `Unexpected token 'I', "Internal S"... is not valid JSON` when logging in on STB
+- This means the Next.js server returns HTML "Internal Server Error" page instead of JSON
+- Traced through: LoginPage.tsx → res.json() fails because response is HTML, not JSON
+- Root cause: Dockerfile Stage 3 (runner) copied node_modules from `deps` (Stage 1) instead of `builder` (Stage 2)
+- `prisma generate` runs in Stage 2, outputting to `node_modules/.prisma/client/`
+- Stage 1's node_modules does NOT have the generated Prisma client
+- When the login route imports `@/lib/supabase` → `new PrismaClient()` at module level → crash → HTML 500 error
+
+Fix 1 — Dockerfile:
+- Changed `COPY --from=deps` to `COPY --from=builder` for node_modules in Stage 3
+- Added comment explaining why builder stage is required (prisma generate output)
+
+Fix 2 — LoginPage.tsx (defense in depth):
+- Wrapped all `res.json()` calls in try-catch blocks
+- Non-JSON responses now show user-friendly "Terjadi kesalahan server" instead of raw JSON parse error
+- Applied to: login, register, forgot-password, reset-password, resend-code flows
+
+Push: Committed and pushed to main → CI/CD rebuild triggered
+
+Stage Summary:
+- Root cause: Dockerfile copying wrong stage for node_modules (missing Prisma generated client)
+- Fix: COPY --from=builder instead of COPY --from=deps
+- Frontend: Safe JSON parsing with user-friendly error messages
+- Commit: dcb89c2 - pushed to GitHub, CI/CD rebuild in progress
