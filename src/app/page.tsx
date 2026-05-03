@@ -294,8 +294,18 @@ function MainApp() {
   useEffect(() => {
     if (unitsData?.units) {
       setUnits(unitsData.units);
+      // Clear stale selectedUnitId if it no longer exists in the units list
+      // (can happen after DB reset/reseed or unit deletion)
+      const prevSelectedUnitId = useUnitStore.getState().selectedUnitId;
+      if (prevSelectedUnitId) {
+        const unitExists = unitsData.units.some((u: any) => u.id === prevSelectedUnitId);
+        if (!unitExists) {
+          setSelectedUnit(null);
+          console.log('[UnitStore] Cleared stale selectedUnitId:', prevSelectedUnitId);
+        }
+      }
     }
-  }, [unitsData, setUnits]);
+  }, [unitsData, setUnits, setSelectedUnit]);
 
   // Activity tracking (server-side debounced + client-side 120s interval)
   const activeModuleRef = useRef(activeModule);

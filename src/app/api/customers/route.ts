@@ -109,6 +109,20 @@ export async function POST(request: NextRequest) {
     }
     const data = validation.data;
 
+    // ========== UNIT VALIDATION ==========
+    // Verify unitId exists in units table (prevent FK violation from stale client-side ID)
+    const { data: unitRow, error: unitCheckError } = await db
+      .from('units')
+      .select('id')
+      .eq('id', data.unitId)
+      .maybeSingle();
+    if (unitCheckError || !unitRow) {
+      return NextResponse.json(
+        { error: 'Unit/Cabang tidak ditemukan. Silakan refresh halaman dan pilih ulang unit.' },
+        { status: 400 }
+      );
+    }
+
     // ========== DUPLICATE CHECK ==========
     // Check by name within same unit
     let dupQuery = db

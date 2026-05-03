@@ -865,6 +865,18 @@ function getConnectionStringCandidates(): { url: string; label: string }[] {
     candidates.push({ url: poolerUrl, label: 'transaction-mode pooler (port 6543)' });
   }
 
+  // Fallback: use Prisma's DATABASE_URL / DIRECT_URL (remove pgbouncer params for pg module)
+  const fallbackUrl = process.env.DIRECT_URL || process.env.DATABASE_URL;
+  if (fallbackUrl && candidates.length === 0) {
+    // Session-mode pooler: change port 6543 → 5432, remove pgbouncer param
+    let cleanUrl = fallbackUrl.replace(/:6543\//, ':5432/');
+    cleanUrl = cleanUrl.replace(/[?&]pgbouncer=true/gi, '');
+    candidates.push({ url: cleanUrl, label: 'session-mode from DATABASE_URL (port 5432)' });
+    // Transaction-mode fallback
+    let txUrl = fallbackUrl.replace(/[?&]pgbouncer=true/gi, '');
+    candidates.push({ url: txUrl, label: 'transaction-mode from DATABASE_URL (port 6543)' });
+  }
+
   return candidates;
 }
 
@@ -946,7 +958,7 @@ export async function ensureRpcFunctions(): Promise<void> {
   const candidates = getConnectionStringCandidates();
 
   if (candidates.length === 0) {
-    console.log('[ensure-rpc] No database URL configured (SUPABASE_DB_URL / SUPABASE_POOLER_URL), skipping RPC deployment.');
+    console.log('[ensure-rpc] No database URL configured (SUPABASE_DB_URL / SUPABASE_POOLER_URL / DATABASE_URL), skipping RPC deployment.');
     return;
   }
 

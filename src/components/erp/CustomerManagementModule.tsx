@@ -481,15 +481,17 @@ export default function CustomerManagementModule() {
   const [followUpLoading, setFollowUpLoading] = useState(false);
 
   const isAdmin = user?.role === 'super_admin';
-  const unitId = selectedUnitId || ''; // Super admin can have empty unit
+  // Validate selectedUnitId against actual units list (prevent stale ID from localStorage)
+  const validUnitId = units.some(u => u.id === selectedUnitId) ? selectedUnitId : '';
+  const unitId = validUnitId || ''; // Super admin can have empty unit
 
   // ========== CUSTOMER QUERY (from CustomersModule) ==========
   const customerParams = new URLSearchParams();
   if (statusFilter) customerParams.set('status', statusFilter);
-  if (selectedUnitId) customerParams.set('unitId', selectedUnitId);
+  if (validUnitId) customerParams.set('unitId', validUnitId);
 
   const { data: customerData, isLoading: customersLoading } = useQuery({
-    queryKey: ['customers', user?.id, statusFilter, selectedUnitId],
+    queryKey: ['customers', user?.id, statusFilter, validUnitId],
     queryFn: async () => {
       return apiFetch<any>(`/api/customers?${customerParams.toString()}`);
     },
@@ -553,10 +555,10 @@ export default function CustomerManagementModule() {
 
   // ========== MONITORING QUERY (from CustomerMonitoringModule) ==========
   const { data: monitoringData, isLoading: monitoringLoading, error: monitoringError, refetch: refetchMonitoring } = useQuery({
-    queryKey: ['customer-monitoring', selectedUnitId, inactiveStatusFilter, salesFilter, monitoringPage],
+    queryKey: ['customer-monitoring', validUnitId, inactiveStatusFilter, salesFilter, monitoringPage],
     queryFn: () => {
       const params = new URLSearchParams();
-      if (selectedUnitId) params.set('unitId', selectedUnitId);
+      if (validUnitId) params.set('unitId', validUnitId);
       if (inactiveStatusFilter !== 'all') params.set('status', inactiveStatusFilter);
       if (salesFilter !== 'all') params.set('salesId', salesFilter);
       params.set('page', monitoringPage.toString());
