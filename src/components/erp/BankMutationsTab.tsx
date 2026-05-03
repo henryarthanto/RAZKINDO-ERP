@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-client';
@@ -152,6 +152,41 @@ export default function BankMutationsTab({ bankAccounts }: BankMutationsTabProps
     staleTime: 60000,
   });
   const mootaBanks = Array.isArray(mootaBanksData?.banks) ? mootaBanksData.banks : [];
+
+  // Auto-sync bank balances from Moota when banks first load
+  const hasAutoSynced = useRef(false);
+  const bankAccountsData = queryClient.getQueryData<{ bankAccounts: any[] }>(['bank-accounts']);
+  const syncBankBalanceSilent = useMutation({
+    mutationFn: async (params: { bankAccountId: string; mootaBalance: number }) => {
+      return apiFetch(`/api/finance/bank-accounts/${params.bankAccountId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ balance: params.mootaBalance, source: 'moota_sync' }),
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (hasAutoSynced.current || mootaBanks.length === 0 || !bankAccountsData?.bankAccounts) return;
+    hasAutoSynced.current = true;
+
+    const allAccounts = bankAccountsData.bankAccounts;
+    let syncCount = 0;
+    const promises = mootaBanks.map(bank => {
+      const sysBank = allAccounts.find((ba: any) => ba.accountNo === bank.account_number);
+      if (!sysBank) return Promise.resolve();
+      const mootaBal = Number(bank.balance) || 0;
+      const sysBal = Number(sysBank.balance) || 0;
+      if (Math.abs(mootaBal - sysBal) <= 1) return Promise.resolve();
+      syncCount++;
+      return syncBankBalanceSilent.mutateAsync({ bankAccountId: sysBank.id, mootaBalance: mootaBal }).catch(() => {});
+    });
+
+    Promise.all(promises).then(() => {
+      if (syncCount > 0) {
+        queryClient.invalidateQueries({ queryKey: ['bank-accounts'] });
+      }
+    });
+  }, [mootaBanks.length > 0]);
 
   // Auto-select first bank
   if (mootaBanks.length > 0 && !selectedBankId) {
