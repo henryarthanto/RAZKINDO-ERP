@@ -348,3 +348,25 @@ Stage Summary:
 - Lint: 0 errors, 0 warnings
 - Dev server: running normally, GET / 200
 - Zero broken imports verified
+
+---
+Task ID: docker-ghcr-cicd
+Agent: Main Agent
+Task: Setup Docker + GHCR CI/CD + Casa OS deployment for STB
+
+Work Log:
+- Created Dockerfile: multi-stage build (deps → build → runner), supports ARM64 + AMD64
+- Created docker-compose.yml: Casa OS deployment with health checks, memory limits (1536M), volume persistence
+- Created .env.example: template with all required Supabase/Moota/Auth variables
+- Created .dockerignore: optimized build context
+- Created .github/workflows/docker-publish.yml: CI/CD on push to main, multi-platform (linux/amd64,linux/arm64), GHCR push
+- Updated .gitignore: added Docker, IDE, backup patterns
+- Initialized git, added remote, pushed to https://github.com/henryarthanto/razkindo-erp
+- Created INSTALL.md: complete Casa OS STB installation guide in Indonesian
+
+Stage Summary:
+- GitHub repo: https://github.com/henryarthanto/RAZKINDO-ERP
+- Docker image: ghcr.io/henryarthanto/razkindo-erp:latest (auto-built on push)
+- CI/CD: GitHub Actions multi-platform build (ARM64 + AMD64)
+- Casa OS: ready for custom install via docker-compose.yml
+- Installation guide: INSTALL.md with step-by-step instructions
