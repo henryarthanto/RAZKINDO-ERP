@@ -401,3 +401,26 @@ Stage Summary:
 - Fix: COPY --from=builder instead of COPY --from=deps
 - Frontend: Safe JSON parsing with user-friendly error messages
 - Commit: dcb89c2 - pushed to GitHub, CI/CD rebuild in progress
+
+---
+Task ID: fix-login-pgrst201
+Agent: Main Agent
+Task: Fix login 500 "terjadi kesalahan server" - PGRST201 ambiguous FK
+
+Work Log:
+- Error reproduced locally: POST /api/auth/login → 500
+- Server log: `[Login] DB error: Could not embed because more than one relationship was found for 'users' and 'custom_roles' PGRST201`
+- Investigated DB: found TWO foreign keys between users and custom_roles:
+  1. users.custom_role_id → custom_roles.id (the FK we want for the embed)
+  2. custom_roles.createdById → users.id (reverse reference, added by Prisma schema)
+- PostgREST couldn't determine which FK to use for `custom_role:custom_roles(*)` embed
+- Fix: Use explicit FK hint in PostgREST select syntax:
+  `custom_role:custom_roles(*)` → `custom_role:custom_roles!users_custom_role_id_fkey(*)`
+- Updated .env AUTH_SECRET to match user's Supabase dashboard value
+- Verified fix: login with wrong password returns 401 (correct) instead of 500
+
+Stage Summary:
+- Root cause: PGRST201 — ambiguous FK relationship between users and custom_roles tables
+- Fix: Explicit FK hint `!users_custom_role_id_fkey` in PostgREST select
+- Login now works correctly: 401 for wrong credentials, 500 fixed
+- Commit: 8b510ec - pushed to GitHub, CI/CD rebuild triggered
