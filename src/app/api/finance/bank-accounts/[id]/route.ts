@@ -26,8 +26,8 @@ export async function PATCH(
     if (data.accountHolder !== undefined) updateData.account_holder = data.accountHolder;
     if (data.branch !== undefined) updateData.branch = data.branch;
     if (data.balance !== undefined) {
-      // Allow keuangan role to sync balance from Moota
-      if (authResult.user.role !== 'super_admin' && data.source !== 'moota_sync') {
+      // Only super_admin can change balance — security fix: prevent client-controlled source bypass
+      if (authResult.user.role !== 'super_admin') {
         return NextResponse.json({ error: 'Forbidden - Hanya Super Admin yang dapat mengubah saldo rekening' }, { status: 403 });
       }
       updateData.balance = Math.max(0, data.balance);
@@ -41,7 +41,7 @@ export async function PATCH(
     return NextResponse.json({ bankAccount: toCamelCase(updated) });
   } catch (error: any) {
     console.error('Update bank account error:', error);
-    return NextResponse.json({ error: error?.message || 'Terjadi kesalahan server' }, { status: 500 });
+    return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
   }
 }
 
@@ -84,6 +84,6 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Delete bank account error:', error);
-    return NextResponse.json({ error: error?.message || 'Terjadi kesalahan server' }, { status: 500 });
+    return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
   }
 }

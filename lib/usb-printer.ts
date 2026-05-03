@@ -385,7 +385,6 @@ export class USBPrinterManager {
         const reader = this.port!.readable!.getReader();
 
         try {
-          // eslint-disable-next-line no-constant-condition
           while (true) {
             if (signal.aborted) break;
 

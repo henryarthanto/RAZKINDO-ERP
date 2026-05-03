@@ -268,13 +268,18 @@ export async function POST(request: NextRequest) {
         }
       });
     } catch (error: any) {
-      if (error?.status === 400) return error;
+      if (error?.status === 400) {
+        return NextResponse.json(
+          { error: typeof error?.message === 'string' ? error.message : 'Terjadi kesalahan' },
+          { status: 400 }
+        );
+      }
       throw error;
     }
   } catch (error: any) {
     console.error('Register error:', error);
     return NextResponse.json(
-      { error: error?.message || 'Terjadi kesalahan server' },
+      { error: 'Terjadi kesalahan server' },
       { status: 500 }
     );
   }

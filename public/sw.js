@@ -107,7 +107,7 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/_next/')) {
     event.respondWith(staleWhileRevalidate(request));
     return;
-  });
+  }
 
   // HTML pages: Network first with offline fallback
   if (request.headers.get('accept')?.includes('text/html')) {

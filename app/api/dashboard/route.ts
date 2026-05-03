@@ -18,7 +18,6 @@ function withTimeout<T>(promise: PromiseLike<T>, ms: number, fallback: T, label:
 }
 
 /** Wrap a query promise with try/catch, returning fallback on any error. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function safeQuery(promise: PromiseLike<any>, fallback: any, label: string): Promise<any> {
   return Promise.resolve(promise).catch((err) => {
     console.error(`[Dashboard] ${label} failed:`, err?.message || err);

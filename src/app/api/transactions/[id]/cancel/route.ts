@@ -383,7 +383,8 @@ export async function POST(
 
     wsTransactionUpdate({ invoiceNo: txCamel.invoiceNo, type: txCamel.type, status: 'cancelled', unitId: txCamel.unitId });
 
-    return NextResponse.json({ transaction: toCamelCase(updatedTransaction) });
+    // BUG FIX: Use cancelledTx as fallback if refetch fails
+    return NextResponse.json({ transaction: toCamelCase(updatedTransaction || cancelledTx) });
   } catch (error) {
     console.error('Cancel transaction error:', error);
     const message = error instanceof Error ? error.message : 'Terjadi kesalahan server';

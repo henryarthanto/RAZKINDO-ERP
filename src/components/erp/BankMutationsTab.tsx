@@ -157,12 +157,7 @@ export default function BankMutationsTab({ bankAccounts }: BankMutationsTabProps
   const hasAutoSynced = useRef(false);
   const bankAccountsData = queryClient.getQueryData<{ bankAccounts: any[] }>(['bank-accounts']);
   const syncBankBalanceSilent = useMutation({
-    mutationFn: async (params: { bankAccountId: string; mootaBalance: number }) => {
-      return apiFetch(`/api/finance/bank-accounts/${params.bankAccountId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ balance: params.mootaBalance, source: 'moota_sync' }),
-      });
-    },
+    mutationFn: () => apiFetch('/api/finance/moota/sync-balance', { method: 'POST' }),
   });
 
   useEffect(() => {
@@ -170,39 +165,36 @@ export default function BankMutationsTab({ bankAccounts }: BankMutationsTabProps
     hasAutoSynced.current = true;
 
     const allAccounts = bankAccountsData.bankAccounts;
-    let syncCount = 0;
-    const promises = mootaBanks.map(bank => {
-      const sysBank = allAccounts.find((ba: any) => ba.accountNo === bank.account_number);
-      if (!sysBank) return Promise.resolve();
+    let needsSync = false;
+    for (const bank of mootaBanks) {
       const mootaBal = Number(bank.balance) || 0;
-      const sysBal = Number(sysBank.balance) || 0;
-      if (Math.abs(mootaBal - sysBal) <= 1) return Promise.resolve();
-      syncCount++;
-      return syncBankBalanceSilent.mutateAsync({ bankAccountId: sysBank.id, mootaBalance: mootaBal }).catch(() => {});
-    });
-
-    Promise.all(promises).then(() => {
-      if (syncCount > 0) {
-        queryClient.invalidateQueries({ queryKey: ['bank-accounts'] });
+      const sysBank = allAccounts.find((ba: any) => ba.accountNo === bank.account_number);
+      if (sysBank && Math.abs(mootaBal - Number(sysBank.balance || 0)) > 1) {
+        needsSync = true;
+        break;
       }
-    });
-  }, [mootaBanks.length > 0]);
+    }
 
-  // Auto-select first bank
-  if (mootaBanks.length > 0 && !selectedBankId) {
-    setSelectedBankId(mootaBanks[0].bank_id);
-  }
+    if (needsSync) {
+      syncBankBalanceSilent.mutateAsync().then(() => {
+        queryClient.invalidateQueries({ queryKey: ['bank-accounts'] });
+      }).catch(() => {});
+    }
+  }, [mootaBanks, bankAccountsData]);
+
+  // Auto-select first bank — derive instead of setState in effect
+  const effectiveBankId = selectedBankId || (mootaBanks.length > 0 ? mootaBanks[0].bank_id : '');
 
   // Fetch mutations
   const { data: mutationsData, isLoading: mutationsLoading } = useQuery({
-    queryKey: ['moota-mutations', selectedBankId, page, typeFilter, dateFrom, dateTo],
+    queryKey: ['moota-mutations', effectiveBankId, page, typeFilter, dateFrom, dateTo],
     queryFn: () => apiFetch<{
       data: MootaMutation[];
       current_page: number;
       last_page: number;
       total: number;
-    }>(`/api/finance/moota/mutations?bankId=${selectedBankId}&page=${page}&perPage=30${typeFilter !== 'all' ? `&type=${typeFilter}` : ''}${dateFrom ? `&startDate=${dateFrom}` : ''}${dateTo ? `&endDate=${dateTo}` : ''}`),
-    enabled: !!selectedBankId,
+    }>(`/api/finance/moota/mutations?bankId=${effectiveBankId}&page=${page}&perPage=30${typeFilter !== 'all' ? `&type=${typeFilter}` : ''}${dateFrom ? `&startDate=${dateFrom}` : ''}${dateTo ? `&endDate=${dateTo}` : ''}`),
+    enabled: !!effectiveBankId,
   });
 
   const mutations = mutationsData?.data || [];
@@ -217,19 +209,14 @@ export default function BankMutationsTab({ bankAccounts }: BankMutationsTabProps
     },
   });
 
-  // Sync bank balance from Moota
+  // Sync bank balance from Moota (manual button)
   const syncBankBalance = useMutation({
-    mutationFn: async (params: { bankAccountId: string; mootaBalance: number }) => {
-      return apiFetch(`/api/finance/bank-accounts/${params.bankAccountId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ balance: params.mootaBalance, source: 'moota_sync' }),
-      });
-    },
+    mutationFn: () => apiFetch('/api/finance/moota/sync-balance', { method: 'POST' }),
     onSuccess: () => {
       toast.success('Saldo rekening berhasil disinkronkan dari Moota');
       queryClient.invalidateQueries({ queryKey: ['bank-accounts'] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: () => toast.error('Gagal sinkronisasi saldo dari Moota'),
   });
 
   // Fetch ALL active piutang for lunas dialog (only when dialog is open)
@@ -289,7 +276,7 @@ export default function BankMutationsTab({ bankAccounts }: BankMutationsTabProps
   const refreshMutation = useMutation({
     mutationFn: () => apiFetch('/api/finance/moota/refresh', {
       method: 'POST',
-      body: JSON.stringify({ bankId: selectedBankId }),
+      body: JSON.stringify({ bankId: effectiveBankId }),
     }),
     onSuccess: (data: any) => {
       toast.success(data.message || 'Refresh berhasil!');
@@ -420,17 +407,7 @@ export default function BankMutationsTab({ bankAccounts }: BankMutationsTabProps
     });
   };
 
-  const handleSyncBankBalance = (mootaBank: MootaBank) => {
-    const sysBank = bankAccounts.find((ba: any) => ba.accountNo === mootaBank.account_number);
-    if (!sysBank) {
-      toast.error('Rekening belum terdaftar di sistem. Tambahkan di Pengaturan → Rekening Bank.');
-      return;
-    }
-    const mootaBal = Number(mootaBank.balance) || 0;
-    syncBankBalance.mutate({ bankAccountId: sysBank.id, mootaBalance: mootaBal });
-  };
-
-  const selectedBank = mootaBanks.find(b => b.bank_id === selectedBankId);
+  const selectedBank = mootaBanks.find(b => b.bank_id === effectiveBankId);
 
   return (
     <div className="space-y-4">
@@ -560,10 +537,7 @@ export default function BankMutationsTab({ bankAccounts }: BankMutationsTabProps
                 size="sm"
                 variant="outline"
                 className="h-7 text-[10px] gap-1 border-amber-200 text-amber-700 hover:bg-amber-50"
-                onClick={() => {
-                  const selectedMootaBank = mootaBanks.find(b => b.bank_id === selectedBankId);
-                  if (selectedMootaBank) handleSyncBankBalance(selectedMootaBank);
-                }}
+                onClick={() => syncBankBalance.mutate()}
                 disabled={syncBankBalance.isPending}
               >
                 {syncBankBalance.isPending ? (

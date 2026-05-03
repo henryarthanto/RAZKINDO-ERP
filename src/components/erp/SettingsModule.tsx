@@ -633,7 +633,6 @@ export default function SettingsModule() {
                     </div>
                   ) : (
                     <div className="w-20 h-20 border-2 border-dashed rounded-lg flex flex-col items-center justify-center text-muted-foreground">
-                      {/* eslint-disable-next-line jsx-a11y/alt-text */}
                       <ImageIcon className="w-8 h-8 mb-1" aria-hidden="true" />
                       <span className="text-xs">Belum ada</span>
                     </div>

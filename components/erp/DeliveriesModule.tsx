@@ -72,7 +72,7 @@ export default function DeliveriesModule() {
     }
 
     return list;
-  }, [data?.transactions, user, isSuperAdmin, courierFilter]);
+  }, [data, user, isSuperAdmin, courierFilter]);
 
   // Date filter helper
   const inDateRange = (dateStr: string) => {
