@@ -25,6 +25,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription
 } from '@/components/ui/dialog';
 import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter, SheetDescription, SheetClose
+} from '@/components/ui/sheet';
+import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem
 } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -105,7 +108,7 @@ function CustomerForm({ unitId, units, onSuccess, customer, salesUserId }: {
   };
   
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1 min-h-0 pr-1">
+    <form onSubmit={handleSubmit} className="space-y-4">
       {needsUnitSelection && (
         <div className="space-y-2">
           <Label>Unit/Cabang *</Label>
@@ -236,11 +239,11 @@ function CustomerForm({ unitId, units, onSuccess, customer, salesUserId }: {
         </div>
       </div>
       
-      <DialogFooter className="shrink-0 pt-2">
+      <div className="flex justify-end pt-2">
         <Button type="submit" disabled={loading || (!formData.unitId && needsUnitSelection)}>
           {loading ? 'Menyimpan...' : isEdit ? 'Update' : 'Simpan'}
         </Button>
-      </DialogFooter>
+      </div>
 
       {/* Duplicate Customer Warning Dialog */}
       <Dialog open={!!dupWarning} onOpenChange={(open) => { if (!open) setDupWarning(null); }}>
@@ -449,28 +452,32 @@ export default function CustomersModule() {
         </div>
 
 
-        <Dialog open={showCreate} onOpenChange={setShowCreate}>
-          <DialogTrigger asChild>
+        {/* Mobile: Bottom Sheet / Desktop: Dialog */}
+        <Sheet open={showCreate} onOpenChange={setShowCreate}>
+          <SheetTrigger asChild>
             <Button>
               <Plus className="w-4 h-4 mr-2" />
               Pelanggan Baru
             </Button>
-          </DialogTrigger>
-          <DialogContent className="w-[calc(100vw-2rem)] sm:w-full max-h-[90dvh] flex flex-col overflow-hidden">
-            <DialogHeader className="shrink-0">
-              <DialogTitle>Tambah Pelanggan</DialogTitle>
-            </DialogHeader>
-            <CustomerForm
-              unitId={unitId || ''}
-              units={units}
-              salesUserId={isSales ? user?.id : undefined}
-              onSuccess={() => {
-                setShowCreate(false);
-                queryClient.invalidateQueries({ queryKey: ['customers'] });
-              }}
-            />
-          </DialogContent>
-        </Dialog>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="rounded-t-2xl max-h-[92dvh] flex flex-col">
+            <SheetHeader className="shrink-0">
+              <SheetTitle>Tambah Pelanggan</SheetTitle>
+              <SheetDescription>Isi data pelanggan baru</SheetDescription>
+            </SheetHeader>
+            <div className="overflow-y-auto flex-1 min-h-0 px-4 pb-2">
+              <CustomerForm
+                unitId={unitId || ''}
+                units={units}
+                salesUserId={isSales ? user?.id : undefined}
+                onSuccess={() => {
+                  setShowCreate(false);
+                  queryClient.invalidateQueries({ queryKey: ['customers'] });
+                }}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
       </div>
       
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 px-2 sm:px-0 max-w-[85%] sm:max-w-full mx-auto sm:mx-0">
@@ -599,26 +606,29 @@ export default function CustomersModule() {
         })}
       </div>
       
-      {/* Edit Customer Dialog */}
-      <Dialog open={!!editingCustomer} onOpenChange={(open) => { if (!open) setEditingCustomer(null); }}>
-        <DialogContent className="w-[calc(100vw-2rem)] sm:w-full max-h-[90dvh] flex flex-col overflow-hidden">
-          <DialogHeader className="shrink-0">
-            <DialogTitle>Edit Pelanggan</DialogTitle>
-          </DialogHeader>
-          {editingCustomer && (
-            <CustomerForm
-              unitId={unitId || ''}
-              units={units}
-              customer={editingCustomer}
-              salesUserId={isSales ? user?.id : undefined}
-              onSuccess={() => {
-                setEditingCustomer(null);
-                queryClient.invalidateQueries({ queryKey: ['customers'] });
-              }}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Edit Customer Sheet */}
+      <Sheet open={!!editingCustomer} onOpenChange={(open) => { if (!open) setEditingCustomer(null); }}>
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[92dvh] flex flex-col">
+          <SheetHeader className="shrink-0">
+            <SheetTitle>Edit Pelanggan</SheetTitle>
+            <SheetDescription>Ubah data pelanggan</SheetDescription>
+          </SheetHeader>
+          <div className="overflow-y-auto flex-1 min-h-0 px-4 pb-2">
+            {editingCustomer && (
+              <CustomerForm
+                unitId={unitId || ''}
+                units={units}
+                customer={editingCustomer}
+                salesUserId={isSales ? user?.id : undefined}
+                onSuccess={() => {
+                  setEditingCustomer(null);
+                  queryClient.invalidateQueries({ queryKey: ['customers'] });
+                }}
+              />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
       
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deletingCustomer} onOpenChange={(open) => { if (!open) setDeletingCustomer(null); }}>
