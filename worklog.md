@@ -200,3 +200,29 @@ Stage Summary:
 - Cash-flow direction categorization now works correctly (purchase payments show as outflow)
 - Service worker (sw.js) no longer has parsing error
 - All lint errors and warnings resolved
+
+---
+Task ID: 1
+Agent: main
+Task: Fix "Could not find the 'conversion_rate' column of 'products' in the schema cache" error
+
+Work Log:
+- Analyzed screenshot showing error in product edit modal
+- Identified root cause: Prisma schema had `conversionRate` and `subUnit` fields without `@map()` directive
+- Without `@map()`, Prisma created DB columns as camelCase (`conversionRate`, `subUnit`)
+- But INSERT/UPDATE Supabase queries used snake_case (`conversion_rate`, `sub_unit`) → column not found
+- Added `@map("conversion_rate")` to conversionRate field in prisma/schema.prisma
+- Added `@map("sub_unit")` to subUnit field in prisma/schema.prisma
+- Renamed DB columns manually via SQL: ALTER TABLE products RENAME COLUMN "conversionRate" TO conversion_rate, ALTER TABLE products RENAME COLUMN "subUnit" TO sub_unit
+- Verified data preserved (6 products with conversion rates intact)
+- Pushed Prisma schema (already in sync)
+- Fixed 13 files with 15 Supabase .select() string changes from camelCase to snake_case
+- Key insight: project has toCamelCase() helper that auto-converts Supabase response keys, so JS property access stays camelCase
+- Re-installed pg package (was accidentally removed during cleanup)
+- Verified: zero lint errors, app compiles and runs
+
+Stage Summary:
+- Root cause: Missing @map() directives in Prisma schema for conversionRate and subUnit
+- Fixed schema, renamed DB columns (data preserved), updated all Supabase queries
+- All 15 .select() strings now use snake_case matching actual DB column names
+- JS property access unchanged (toCamelCase() helper handles conversion)

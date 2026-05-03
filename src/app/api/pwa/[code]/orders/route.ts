@@ -41,7 +41,7 @@ export async function GET(
         *,
         unit:units(id, name),
         created_by:users!created_by_id(id, name),
-        items:transaction_items(*, product:products(unit, subUnit))
+        items:transaction_items(*, product:products(unit, sub_unit))
       `)
       .eq('customer_id', customer.id)
       .eq('type', 'sale')

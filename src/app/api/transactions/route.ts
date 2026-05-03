@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
         courier:users!courier_id(*),
         customer:customers(*),
         supplier:suppliers(*),
-        items:transaction_items(*, product:products(unit, subUnit, conversionRate)),
+        items:transaction_items(*, product:products(unit, sub_unit, conversion_rate)),
         payments:payments(*, received_by:users!received_by_id(*))
       `);
 
@@ -502,7 +502,7 @@ export async function POST(request: NextRequest) {
             })
             .select(`
               *,
-              items:transaction_items(*, product:products(unit, subUnit, conversionRate)),
+              items:transaction_items(*, product:products(unit, sub_unit, conversion_rate)),
               unit:units(*),
               created_by:users!created_by_id(*),
               customer:customers(*)
@@ -908,7 +908,7 @@ export async function POST(request: NextRequest) {
           .from('transactions')
           .select(`
             *,
-            items:transaction_items(*, product:products(unit, subUnit, conversionRate)),
+            items:transaction_items(*, product:products(unit, sub_unit, conversion_rate)),
             unit:units(*),
             created_by:users!created_by_id(*),
             customer:customers(*)

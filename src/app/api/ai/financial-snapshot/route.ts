@@ -245,7 +245,7 @@ export async function GET(request: NextRequest) {
       // ── 6. SEMUA PRODUK AKTIF ──
       db
         .from('products')
-        .select('id, name, global_stock, avg_hpp, conversionRate, selling_price, sell_price_per_sub_unit, min_stock, is_active, category, unit, subUnit')
+        .select('id, name, global_stock, avg_hpp, conversion_rate, selling_price, sell_price_per_sub_unit, min_stock, is_active, category, unit, sub_unit')
         .eq('is_active', true)
         .limit(500),
 

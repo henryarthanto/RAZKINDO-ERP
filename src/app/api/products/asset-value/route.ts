@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     // ── Fetch all active products ──
     const { data: products, error } = await db
       .from('products')
-      .select('id, name, category, global_stock, avg_hpp, selling_price, sell_price_per_sub_unit, conversionRate, min_stock, is_active')
+      .select('id, name, category, global_stock, avg_hpp, selling_price, sell_price_per_sub_unit, conversion_rate, min_stock, is_active')
       .eq('is_active', true);
 
     if (error) {

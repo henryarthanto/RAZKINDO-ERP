@@ -78,7 +78,7 @@ export async function GET(
       // All active products
       db
         .from('products')
-        .select('id, name, sku, unit, subUnit, conversionRate, selling_price, global_stock, min_stock, is_active, stock_type, image_url')
+        .select('id, name, sku, unit, sub_unit, conversion_rate, selling_price, global_stock, min_stock, is_active, stock_type, image_url')
         .eq('is_active', true)
         .order('name', { ascending: true })
         .limit(500),

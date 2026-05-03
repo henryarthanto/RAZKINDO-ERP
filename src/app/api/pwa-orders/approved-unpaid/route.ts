@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
         customer:customers(id, name, phone, assigned_to_id),
         created_by:users!created_by_id(id, name, phone),
         courier:users!courier_id(id, name),
-        items:transaction_items(*, product:products(id, name, avg_hpp, unit, subUnit, conversionRate, selling_price, sell_price_per_sub_unit))
+        items:transaction_items(*, product:products(id, name, avg_hpp, unit, sub_unit, conversion_rate, selling_price, sell_price_per_sub_unit))
       `)
       .eq('type', 'sale')
       .eq('status', 'approved')

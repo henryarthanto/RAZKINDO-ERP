@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
     // Batch fetch products, users, and units in parallel
     const [productsResult, usersResult, unitsResult] = await Promise.all([
       productIds.length > 0
-        ? db.from('products').select('id, name, sku, unit, subUnit, conversionRate').in('id', productIds)
+        ? db.from('products').select('id, name, sku, unit, sub_unit, conversion_rate').in('id', productIds)
         : Promise.resolve({ data: [] }),
       userIds.length > 0
         ? db.from('users').select('id, name').in('id', userIds)

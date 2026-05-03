@@ -407,4 +407,4 @@ export async function fetchPurchaseHistoryHpp(
  * Build Supabase select fields for fetching product financial data.
  * Use this in .select() calls to ensure all needed fields are available.
  */
-export const PRODUCT_FINANCIAL_SELECT = 'id, avg_hpp, purchase_price, conversionRate, track_stock, stock_type, unit, subUnit, sell_price_per_sub_unit, selling_price, name';
+export const PRODUCT_FINANCIAL_SELECT = 'id, avg_hpp, purchase_price, conversion_rate, track_stock, stock_type, unit, sub_unit, sell_price_per_sub_unit, selling_price, name';

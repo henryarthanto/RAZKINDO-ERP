@@ -117,8 +117,8 @@ model Product {
   description         String?
   category            String?
   unit                String?
-  subUnit             String?
-  conversionRate      Decimal           @default(1) @db.Decimal(15, 2)
+  subUnit             String?           @map("sub_unit")
+  conversionRate      Decimal           @default(1) @map("conversion_rate") @db.Decimal(15, 2)
   globalStock         Decimal           @default(0) @map("global_stock") @db.Decimal(15, 3)
   avgHpp              Decimal           @default(0) @map("avg_hpp") @db.Decimal(15, 2)
   sellingPrice        Decimal           @default(0) @map("selling_price") @db.Decimal(15, 2)
