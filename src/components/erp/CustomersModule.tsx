@@ -105,7 +105,7 @@ function CustomerForm({ unitId, units, onSuccess, customer, salesUserId }: {
   };
   
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1 min-h-0 pr-1">
       {needsUnitSelection && (
         <div className="space-y-2">
           <Label>Unit/Cabang *</Label>
@@ -236,7 +236,7 @@ function CustomerForm({ unitId, units, onSuccess, customer, salesUserId }: {
         </div>
       </div>
       
-      <DialogFooter>
+      <DialogFooter className="shrink-0 pt-2">
         <Button type="submit" disabled={loading || (!formData.unitId && needsUnitSelection)}>
           {loading ? 'Menyimpan...' : isEdit ? 'Update' : 'Simpan'}
         </Button>
@@ -456,8 +456,8 @@ export default function CustomersModule() {
               Pelanggan Baru
             </Button>
           </DialogTrigger>
-          <DialogContent className="w-[calc(100vw-2rem)] sm:w-full">
-            <DialogHeader>
+          <DialogContent className="w-[calc(100vw-2rem)] sm:w-full max-h-[90dvh] flex flex-col overflow-hidden">
+            <DialogHeader className="shrink-0">
               <DialogTitle>Tambah Pelanggan</DialogTitle>
             </DialogHeader>
             <CustomerForm
@@ -601,8 +601,8 @@ export default function CustomersModule() {
       
       {/* Edit Customer Dialog */}
       <Dialog open={!!editingCustomer} onOpenChange={(open) => { if (!open) setEditingCustomer(null); }}>
-        <DialogContent className="w-[calc(100vw-2rem)] sm:w-full">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100vw-2rem)] sm:w-full max-h-[90dvh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Edit Pelanggan</DialogTitle>
           </DialogHeader>
           {editingCustomer && (
