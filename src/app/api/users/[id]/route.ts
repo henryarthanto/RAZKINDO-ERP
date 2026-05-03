@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import { enforceSuperAdmin } from '@/lib/require-auth';
 import { invalidateUserAuthCache } from '@/lib/token';
 
-const VALID_ROLES = ['super_admin', 'sales', 'kurir', 'keuangan', 'gudang'];
+const BUILT_IN_ROLES = ['super_admin', 'sales', 'kurir', 'keuangan', 'gudang'];
 const VALID_STATUSES = ['pending', 'approved', 'rejected'];
 
 // ============ HELPER: Reassign sales data to super_admin ============
@@ -65,10 +65,22 @@ export async function PATCH(
     if (data.name !== undefined) updateData.name = data.name;
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.role !== undefined) {
-      if (!VALID_ROLES.includes(data.role)) {
+      // Allow built-in roles OR custom roles (if user has a custom_role_id)
+      if (!BUILT_IN_ROLES.includes(data.role) && !existingCamel.customRoleId) {
         return NextResponse.json({ error: 'Role tidak valid' }, { status: 400 });
       }
       updateData.role = data.role;
+    }
+    if (data.customRoleId !== undefined) {
+      // Verify the custom role exists before updating
+      if (data.customRoleId) {
+        const { data: cr } = await db.from('custom_roles').select('id,name').eq('id', data.customRoleId).maybeSingle();
+        if (!cr) return NextResponse.json({ error: 'Role kustom tidak ditemukan' }, { status: 400 });
+        updateData.custom_role_id = data.customRoleId;
+        updateData.role = (cr as any).name;
+      } else {
+        updateData.custom_role_id = null;
+      }
     }
     if (data.unitId !== undefined) updateData.unit_id = data.unitId || null;
     if (data.status !== undefined) {

@@ -856,6 +856,7 @@ export default function UsersModule() {
               key={editUser?.id}
               user={editUser}
               units={units}
+              customRoles={customRoles}
               onSave={(data) => updateMutation.mutate({ id: editUser.id, data })}
               onCancel={() => setEditUser(null)}
               isLoading={updateMutation.isPending}
@@ -870,12 +871,14 @@ export default function UsersModule() {
 function EditUserForm({
   user,
   units,
+  customRoles,
   onSave,
   onCancel,
   isLoading,
 }: {
   user: UserItem;
   units: { id: string; name: string }[];
+  customRoles: CustomRoleItem[];
   onSave: (data: any) => void;
   onCancel: () => void;
   isLoading: boolean;
@@ -890,6 +893,9 @@ function EditUserForm({
   const [password, setPassword] = useState('');
   const [nearCommission, setNearCommission] = useState(String(user.nearCommission || 0));
   const [farCommission, setFarCommission] = useState(String(user.farCommission || 0));
+  const [selectedCustomRoleId, setSelectedCustomRoleId] = useState(user.customRoleId || '');
+
+  const isNonErp = user.canLogin === false || !!user.customRoleId;
 
   const toggleUnit = (unitId: string) => {
     setUnitIds(prev =>
@@ -907,16 +913,28 @@ function EditUserForm({
     const data: any = {
       name: name.trim(),
       phone: phone.trim() || null,
-      role,
-      status,
       unitIds,
     };
-    if (password && password.length >= 6) {
-      data.password = password;
-    } else if (password && password.length > 0 && password.length < 6) {
-      toast.error('Password minimal 6 karakter');
-      return;
+
+    if (isNonErp) {
+      // Non-ERP employee: send customRoleId to identify the role
+      if (selectedCustomRoleId) {
+        data.customRoleId = selectedCustomRoleId;
+      }
+      // Keep the current role string from the custom role
+      data.role = role;
+    } else {
+      // System user: send role as usual
+      data.role = role;
+      data.status = status;
+      if (password && password.length >= 6) {
+        data.password = password;
+      } else if (password && password.length > 0 && password.length < 6) {
+        toast.error('Password minimal 6 karakter');
+        return;
+      }
     }
+
     if (role === 'kurir') {
       data.nearCommission = Number(nearCommission) || 0;
       data.farCommission = Number(farCommission) || 0;
@@ -924,50 +942,77 @@ function EditUserForm({
     onSave(data);
   };
 
+  // Find the custom role name for display
+  const currentCustomRole = customRoles.find(cr => cr.id === selectedCustomRoleId);
+
   return (
     <div className="space-y-4 pt-2">
       <div>
         <Label>Nama</Label>
         <Input value={name} onChange={(e) => setName(e.target.value)} />
       </div>
-      <div>
-        <Label>Email (tidak bisa diubah)</Label>
-        <Input value={user.email} disabled />
-      </div>
+      {!isNonErp && (
+        <div>
+          <Label>Email (tidak bisa diubah)</Label>
+          <Input value={user.email} disabled />
+        </div>
+      )}
       <div>
         <Label>Telepon</Label>
         <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
       </div>
-      <div>
-        <Label>Password Baru (kosongkan jika tidak diubah)</Label>
-        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 6 karakter" />
-      </div>
-      <div>
-        <Label>Role</Label>
-        <Select value={role} onValueChange={setRole}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ROLES.map(r => (
-              <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <Label>Status</Label>
-        <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="approved">Approved</SelectItem>
-            <SelectItem value="rejected">Rejected</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {!isNonErp && (
+        <div>
+          <Label>Password Baru (kosongkan jika tidak diubah)</Label>
+          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 6 karakter" />
+        </div>
+      )}
+      {isNonErp ? (
+        <div>
+          <Label>Jabatan / Role</Label>
+          <Select value={selectedCustomRoleId} onValueChange={(v) => {
+            setSelectedCustomRoleId(v);
+            const cr = customRoles.find(c => c.id === v);
+            if (cr) setRole(cr.name);
+          }}>
+            <SelectTrigger><SelectValue placeholder="Pilih jabatan..." /></SelectTrigger>
+            <SelectContent>
+              {customRoles.map(cr => (
+                <SelectItem key={cr.id} value={cr.id}>{cr.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : (
+        <div>
+          <Label>Role</Label>
+          <Select value={role} onValueChange={setRole}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ROLES.map(r => (
+                <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {!isNonErp && (
+        <div>
+          <Label>Status</Label>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="rejected">Rejected</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* Multi-unit selector */}
       {role !== 'super_admin' && (

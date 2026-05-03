@@ -251,3 +251,25 @@ Stage Summary:
 - Fix 2: Added process-level crash handlers (unhandledRejection, uncaughtException)
 - Fix 3: SaleForm now auto-retries on 502/503/504 with idempotency key (no duplicate transactions)
 - Files modified: src/instrumentation.ts, src/components/erp/SaleForm.tsx
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix pengguna & karyawan - role custom - unauthorized issue
+
+Work Log:
+- Investigated the role/authorization system across the entire codebase
+- Found root cause 1: PATCH /api/users/[id] had VALID_ROLES = ['super_admin', 'sales', 'kurir', 'keuangan', 'gudang'] which blocked custom roles like "OB", "Sopir" with "Role tidak valid"
+- Found root cause 2: EditUserForm in UsersModule.tsx only showed built-in ROLES in the role dropdown, so custom role users couldn't be properly edited
+- Fixed PATCH endpoint: renamed VALID_ROLES → BUILT_IN_ROLES, added logic to allow custom roles when user has custom_role_id
+- Added customRoleId handling in PATCH: when customRoleId is provided, verifies the custom role exists in DB and updates both custom_role_id and role fields
+- Fixed EditUserForm: added customRoles prop, detects isNonErp user, shows custom role dropdown (by customRoleId) for non-ERP employees instead of built-in roles
+- Removed email field from edit form for non-ERP employees (auto-generated internal email not editable)
+- Removed password field from edit form for non-ERP employees (can't log in)
+- Removed status field from edit form for non-ERP employees (always approved)
+- Passed customRoles prop from parent UsersModule to EditUserForm
+
+Stage Summary:
+- /api/users/[id]/route.ts: Added custom role support in PATCH handler
+- UsersModule.tsx: EditUserForm now properly handles custom role users with dedicated UI
+- Lint: 0 errors, 1 warning (from backup file)
