@@ -460,12 +460,12 @@ export default function CustomersModule() {
               Pelanggan Baru
             </Button>
           </SheetTrigger>
-          <SheetContent side="bottom" className="rounded-t-2xl max-h-[92dvh] flex flex-col">
+          <SheetContent side="bottom" className="rounded-t-2xl max-h-[92dvh] overflow-hidden">
             <SheetHeader className="shrink-0">
               <SheetTitle>Tambah Pelanggan</SheetTitle>
               <SheetDescription>Isi data pelanggan baru</SheetDescription>
             </SheetHeader>
-            <div className="overflow-y-auto flex-1 min-h-0 px-4 pb-2">
+            <div className="overflow-y-auto flex-1 min-h-0 overscroll-contain px-4 pb-4">
               <CustomerForm
                 unitId={unitId || ''}
                 units={units}
@@ -608,12 +608,12 @@ export default function CustomersModule() {
       
       {/* Edit Customer Sheet */}
       <Sheet open={!!editingCustomer} onOpenChange={(open) => { if (!open) setEditingCustomer(null); }}>
-        <SheetContent side="bottom" className="rounded-t-2xl max-h-[92dvh] flex flex-col">
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[92dvh] overflow-hidden">
           <SheetHeader className="shrink-0">
             <SheetTitle>Edit Pelanggan</SheetTitle>
             <SheetDescription>Ubah data pelanggan</SheetDescription>
           </SheetHeader>
-          <div className="overflow-y-auto flex-1 min-h-0 px-4 pb-2">
+          <div className="overflow-y-auto flex-1 min-h-0 overscroll-contain px-4 pb-4">
             {editingCustomer && (
               <CustomerForm
                 unitId={unitId || ''}
