@@ -3,6 +3,7 @@ import { db } from '@/lib/supabase';
 import { toCamelCase, createLog, createEvent, generateId, generateInvoiceNo } from '@/lib/supabase-helpers';
 import { getWhatsAppConfig, sendMessage, renderMessageTemplate, disableWhatsAppOnInvalidToken } from '@/lib/whatsapp';
 import { verifyAndGetAuthUser } from '@/lib/token';
+import { fetchEffectiveRolesFromDB } from '@/lib/role-permissions';
 import { wsTransactionUpdate, wsStockUpdate } from '@/lib/ws-dispatch';
 import { atomicUpdateBalance, atomicUpdatePoolBalance } from '@/lib/atomic-ops';
 import { validateBody, validateQuery, transactionSchemas } from '@/lib/validators';
@@ -97,12 +98,17 @@ export async function GET(request: NextRequest) {
     const limit = searchParams.get('limit');
 
     // Auth check — single DB query for verification + role
-    const authResult = await verifyAndGetAuthUser(request.headers.get('authorization'), { role: true });
+    const authResult = await verifyAndGetAuthUser(request.headers.get('authorization'), { role: true, customRoleId: true });
     if (!authResult) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const authUserId = authResult.userId;
     const authUserRole = authResult.user.role;
+
+    // Resolve effective roles for custom role users
+    const authEffectiveRoles = await fetchEffectiveRolesFromDB(db, authUserId);
+    const hasAdminFinance = authEffectiveRoles.includes('super_admin') || authEffectiveRoles.includes('keuangan');
+    const isSalesOnly = authEffectiveRoles.includes('sales') && !hasAdminFinance;
 
     // Build query
     let query = db
@@ -123,7 +129,7 @@ export async function GET(request: NextRequest) {
     if (type) query = query.eq('type', type);
     if (status) query = query.eq('status', status);
     // Server-side enforcement: sales users can only see their own transactions
-    if (authUserRole === 'sales') {
+    if (isSalesOnly) {
       query = query.eq('created_by_id', authUserId);
     } else if (searchParams.get('createdById')) {
       query = query.eq('created_by_id', searchParams.get('createdById'));
@@ -158,8 +164,8 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Strip sensitive financial data for non-admin roles
-    if (authUserRole && !['super_admin', 'keuangan'].includes(authUserRole)) {
+    // Strip sensitive financial data for non-admin/finance roles
+    if (!hasAdminFinance) {
       for (const tx of transactionsCamel) {
         delete (tx as any).totalHpp;
         delete (tx as any).hppPaid;
@@ -190,12 +196,15 @@ export async function POST(request: NextRequest) {
   perfMonitor.incrementCounter('transactions.create_requested');
   try {
     // Auth check — single DB query for verification + role
-    const authResult = await verifyAndGetAuthUser(request.headers.get('authorization'), { role: true });
+    const authResult = await verifyAndGetAuthUser(request.headers.get('authorization'), { role: true, customRoleId: true });
     if (!authResult) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const authUserId = authResult.userId;
     const authUserData = authResult.user;
+
+    // Resolve effective roles for custom role users
+    const authEffectiveRoles = await fetchEffectiveRolesFromDB(db, authUserId);
 
     const rawBody = await request.json();
 
@@ -219,10 +228,19 @@ export async function POST(request: NextRequest) {
       sales: ['sale'],
       kurir: [],
     };
-    const allowedForRole = allowedTypesByRole[authUserData.role] || [];
+
+    // Resolve allowed types using effective roles (supports custom roles)
+    let allowedForRole: string[] = [];
+    for (const effectiveRole of authEffectiveRoles) {
+      const types = allowedTypesByRole[effectiveRole] || [];
+      allowedForRole = allowedForRole.concat(types);
+    }
+    // Deduplicate
+    allowedForRole = [...new Set(allowedForRole)];
+
     if (!allowedForRole.includes(data.type)) {
       return NextResponse.json(
-        { error: `Role ${authUserData.role} tidak memiliki akses untuk membuat transaksi ${data.type}` },
+        { error: `Role tidak memiliki akses untuk membuat transaksi ${data.type}` },
         { status: 403 }
       );
     }

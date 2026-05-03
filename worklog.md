@@ -273,3 +273,38 @@ Stage Summary:
 - /api/users/[id]/route.ts: Added custom role support in PATCH handler
 - UsersModule.tsx: EditUserForm now properly handles custom role users with dedicated UI
 - Lint: 0 errors, 1 warning (from backup file)
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix custom role "unauthorized" — add permissions system for custom roles
+
+Work Log:
+- Deep investigation revealed that the entire role/permission system only supports 4 built-in roles
+- Custom roles store their name in users.role (e.g., "OB") but ALL module filtering and API checks use hardcoded role comparisons
+- This means custom role users see empty sidebar (no modules) and get 403 on every API call
+- Added `permissions` text field to CustomRole model in Prisma schema (stores JSON array of built-in roles)
+- Ran `bun run db:push` to sync schema
+- Created `src/lib/role-permissions.ts` with resolveEffectiveRoles(), parsePermissionsJson(), fetchEffectiveRolesFromDB(), hasAnyRole(), hasRole()
+- Updated User type: added customRoleId, customRole, effectiveRoles fields; widened UserRole to accept string
+- Updated login API: fetches custom_role relation, resolves and returns effectiveRoles
+- Updated page.tsx: both sidebar and bottom nav module filtering now use effectiveRoles
+- Updated page.tsx: dashboard renderModule now uses effectiveRoles to choose SalesDashboard vs CourierDashboard vs DashboardModule
+- Rewrote require-auth.ts: added getAuthUserWithRoles(), hasEffectiveRoles(), updated enforceFinanceRole to support custom roles
+- Updated transactions API GET: uses fetchEffectiveRolesFromDB for sales-only filtering and financial data stripping
+- Updated transactions API POST: resolves allowed transaction types from effective roles (union of all role permissions)
+- Rewrote custom-roles API POST: accepts permissions array, validates against BUILT_IN_ROLES, stores as JSON
+- Rewrote custom-roles API PATCH: handles permissions update
+- Updated UsersModule: CustomRoleItem type includes permissions, added PERMISSION_ROLES constants
+- Updated UsersModule: custom role creation form has permissions checkboxes
+- Updated UsersModule: custom role edit form shows permissions checkboxes, pre-populated from existing
+- Updated UsersModule: custom role list shows permission badges
+- Lint: 0 errors
+
+Stage Summary:
+- New file: src/lib/role-permissions.ts — central helper for resolving custom role permissions
+- Schema: custom_roles.permissions (text, JSON array of built-in roles)
+- Login now returns effectiveRoles for custom role users
+- Frontend module filtering (sidebar + bottom nav) uses effectiveRoles
+- Transactions API uses effective roles for both GET filtering and POST permission checks
+- Custom role management UI: create/edit forms include permission checkboxes
+- Users with custom roles that have permissions configured will now see modules and access APIs

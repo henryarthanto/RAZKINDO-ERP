@@ -82,9 +82,23 @@ type CustomRoleItem = {
   id: string;
   name: string;
   description: string | null;
+  permissions?: string | null;
   userCount: number;
   createdAt: string;
 };
+
+const PERMISSION_ROLES = [
+  { value: 'super_admin', label: 'Super Admin' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'kurir', label: 'Kurir' },
+  { value: 'keuangan', label: 'Keuangan' },
+  { value: 'gudang', label: 'Gudang' },
+];
+
+function parsePermissions(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
 
 const ROLES = [
   { value: 'super_admin', label: 'Super Admin', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' },
@@ -133,9 +147,11 @@ export default function UsersModule() {
   // Custom roles
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleDesc, setNewRoleDesc] = useState('');
+  const [newRolePermissions, setNewRolePermissions] = useState<string[]>([]);
   const [editRoleId, setEditRoleId] = useState<string | null>(null);
   const [editRoleName, setEditRoleName] = useState('');
   const [editRoleDesc, setEditRoleDesc] = useState('');
+  const [editRolePermissions, setEditRolePermissions] = useState<string[]>([]);
 
   // Fetch custom roles
   const { data: customRolesData } = useQuery({
@@ -302,7 +318,7 @@ export default function UsersModule() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
-      setNewRoleName(''); setNewRoleDesc('');
+      setNewRoleName(''); setNewRoleDesc(''); setNewRolePermissions([]);
       toast.success('Role berhasil ditambahkan');
     },
     onError: (err: any) => toast.error(err.message),
@@ -415,7 +431,7 @@ export default function UsersModule() {
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2"><UserCog className="w-5 h-5" />Role Kustom</DialogTitle>
-                <DialogDescription>Buat role untuk karyawan non-ERP (OB, Sopir, Security, dll)</DialogDescription>
+                <DialogDescription>Buat role untuk karyawan non-ERP (OB, Sopir, Security, dll). Atur akses modul melalui permission.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 pt-2">
                 {customRoles.length === 0 ? (
@@ -428,21 +444,55 @@ export default function UsersModule() {
                     {customRoles.map((cr) => (
                       <div key={cr.id} className="flex items-center justify-between p-3 rounded-lg border gap-2">
                         {editRoleId === cr.id ? (
-                          <div className="flex-1 space-y-1">
+                          <div className="flex-1 space-y-2">
                             <Input value={editRoleName} onChange={e => setEditRoleName(e.target.value)} className="h-8 text-sm" />
                             <Input value={editRoleDesc} onChange={e => setEditRoleDesc(e.target.value)} placeholder="Deskripsi (opsional)" className="h-8 text-sm" />
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-medium text-muted-foreground">Akses Modul:</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {PERMISSION_ROLES.map(pr => (
+                                  <label key={pr.value} className={cn(
+                                    "flex items-center gap-1 rounded-md px-2 py-1 cursor-pointer text-[10px] transition-colors border",
+                                    editRolePermissions.includes(pr.value)
+                                      ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300"
+                                      : "hover:bg-muted"
+                                  )}>
+                                    <Checkbox
+                                      checked={editRolePermissions.includes(pr.value)}
+                                      onCheckedChange={() => setEditRolePermissions(prev =>
+                                        prev.includes(pr.value) ? prev.filter(p => p !== pr.value) : [...prev, pr.value]
+                                      )}
+                                      className="h-3 w-3"
+                                    />
+                                    {pr.label}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
                           </div>
                         ) : (
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium">{cr.name}</p>
                             {cr.description && <p className="text-xs text-muted-foreground">{cr.description}</p>}
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{cr.userCount} karyawan</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <p className="text-[10px] text-muted-foreground">{cr.userCount} karyawan</p>
+                              {parsePermissions(cr.permissions).length > 0 && (
+                                <div className="flex gap-1">
+                                  {parsePermissions(cr.permissions).map(p => {
+                                    const pr = PERMISSION_ROLES.find(r => r.value === p);
+                                    return pr ? (
+                                      <Badge key={p} variant="secondary" className="text-[9px] px-1.5 py-0 h-4">{pr.label}</Badge>
+                                    ) : null;
+                                  })}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                         <div className="flex items-center gap-1 shrink-0">
                           {editRoleId === cr.id ? (
                             <>
-                              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => updateRoleMutation.mutate({ id: cr.id, data: { name: editRoleName, description: editRoleDesc } })} disabled={updateRoleMutation.isPending}>
+                              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => updateRoleMutation.mutate({ id: cr.id, data: { name: editRoleName, description: editRoleDesc, permissions: editRolePermissions } })} disabled={updateRoleMutation.isPending}>
                                 <Check className="w-3.5 h-3.5" />
                               </Button>
                               <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditRoleId(null)}>
@@ -451,7 +501,7 @@ export default function UsersModule() {
                             </>
                           ) : (
                             <>
-                              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => { setEditRoleId(cr.id); setEditRoleName(cr.name); setEditRoleDesc(cr.description || ''); }}>
+                              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => { setEditRoleId(cr.id); setEditRoleName(cr.name); setEditRoleDesc(cr.description || ''); setEditRolePermissions(parsePermissions(cr.permissions)); }}>
                                 <Pencil className="w-3.5 h-3.5" />
                               </Button>
                               <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => deleteRoleMutation.mutate(cr.id)} disabled={deleteRoleMutation.isPending}>
@@ -465,15 +515,37 @@ export default function UsersModule() {
                   </div>
                 )}
                 <Separator />
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <p className="text-xs font-medium text-muted-foreground">Tambah Role Baru</p>
                   <div className="flex gap-2">
                     <Input value={newRoleName} onChange={e => setNewRoleName(e.target.value)} placeholder="Nama role (misal: OB, Sopir)" className="h-8 text-sm" />
-                    <Button size="sm" onClick={() => createRoleMutation.mutate({ name: newRoleName, description: newRoleDesc })} disabled={!newRoleName.trim() || createRoleMutation.isPending} className="shrink-0">
+                    <Button size="sm" onClick={() => createRoleMutation.mutate({ name: newRoleName, description: newRoleDesc, permissions: newRolePermissions })} disabled={!newRoleName.trim() || createRoleMutation.isPending} className="shrink-0">
                       <Plus className="w-4 h-4" />
                     </Button>
                   </div>
                   <Input value={newRoleDesc} onChange={e => setNewRoleDesc(e.target.value)} placeholder="Deskripsi (opsional)" className="h-8 text-sm" />
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium text-muted-foreground">Akses Modul (opsional — pilih role bawaan yang diizinkan):</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PERMISSION_ROLES.map(pr => (
+                        <label key={pr.value} className={cn(
+                          "flex items-center gap-1 rounded-md px-2 py-1 cursor-pointer text-[10px] transition-colors border",
+                          newRolePermissions.includes(pr.value)
+                            ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300"
+                            : "hover:bg-muted"
+                        )}>
+                          <Checkbox
+                            checked={newRolePermissions.includes(pr.value)}
+                            onCheckedChange={() => setNewRolePermissions(prev =>
+                              prev.includes(pr.value) ? prev.filter(p => p !== pr.value) : [...prev, pr.value]
+                            )}
+                            className="h-3 w-3"
+                          />
+                          {pr.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </DialogContent>

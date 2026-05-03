@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { getAuthSecret } from '@/lib/auth-secret';
 import { invalidateUserAuthCache } from '@/lib/token';
 import { validateBody, authSchemas } from '@/lib/validators';
+import { resolveEffectiveRoles } from '@/lib/role-permissions';
 
 // ================================
 // RATE LIMITING - In-memory login attempt tracker
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
 
     const { data: user, error: dbError } = await db
       .from('users')
-      .select('*, unit:units(*)')
+      .select('*, unit:units(*), custom_role:custom_roles(*)')
       .eq('email', normalizedEmail)
       .maybeSingle();
 
@@ -157,7 +158,10 @@ export async function POST(request: NextRequest) {
     const { password: _, ...userWithoutPassword } = userCamel!;
     const token = generateToken(userCamel.id);
 
-    return NextResponse.json({ user: userWithoutPassword, token });
+    // Resolve effective roles for custom role users
+    const effectiveRoles = resolveEffectiveRoles(userCamel as any);
+
+    return NextResponse.json({ user: { ...userWithoutPassword, effectiveRoles }, token });
   } catch (error: any) {
     console.error('[Login] Server error:', error?.message || error);
     return NextResponse.json({ error: error?.message || 'Terjadi kesalahan server' }, { status: 500 });

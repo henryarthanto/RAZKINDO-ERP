@@ -109,6 +109,9 @@ function MobileBottomNav({
   const visible = allModules.filter(m => {
     if (!user) return false;
     if (user.role === 'super_admin') return true;
+    const effectiveRoles = user.effectiveRoles || [];
+    if (effectiveRoles.includes('super_admin')) return true;
+    if (effectiveRoles.length > 0) return m.roles.some(r => effectiveRoles.includes(r));
     return m.roles.includes(user.role);
   });
 
@@ -354,6 +357,11 @@ function MainApp() {
   const visibleModules = modules.filter(m => {
     if (!user) return false;
     if (user.role === 'super_admin') return true;
+    // For custom role users, check effectiveRoles
+    const effectiveRoles = user.effectiveRoles || [];
+    if (effectiveRoles.includes('super_admin')) return true;
+    if (effectiveRoles.length > 0) return m.roles.some(r => effectiveRoles.includes(r));
+    // Fallback: check built-in role directly
     return m.roles.includes(user.role);
   });
 
@@ -398,8 +406,12 @@ function MainApp() {
   const renderModule = () => {
     if (!user) return null;
     switch (activeModule) {
-      case 'dashboard':
-        return user.role === 'sales' ? <SalesDashboard /> : user.role === 'kurir' ? <CourierDashboard /> : <DashboardModule />;
+      case 'dashboard': {
+        const er = user.effectiveRoles || [];
+        if (er.includes('sales') && !er.includes('keuangan')) return <SalesDashboard />;
+        if (er.includes('kurir') && !er.includes('sales') && !er.includes('keuangan')) return <CourierDashboard />;
+        return <DashboardModule />;
+      }
       case 'transaksi': return <TransactionsModule />;
       case 'produk': return <ProductsModule />;
       case 'pelanggan': return user.role === 'super_admin' ? <CustomerManagementModule /> : <CustomersModule />;

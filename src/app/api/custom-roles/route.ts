@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { toCamelCase, rowsToCamelCase, generateId } from '@/lib/supabase-helpers';
 import { enforceSuperAdmin } from '@/lib/require-auth';
+import { BUILT_IN_ROLES } from '@/lib/role-permissions';
 
 // =====================================================================
 // Custom Roles CRUD — for non-ERP employees (OB, Sopir, Security, etc.)
+//
+// Custom roles now support a `permissions` field (JSON array of built-in
+// role names) that grants the custom role the same module/API access as
+// the listed built-in roles.
 //
 // NOTE: Database columns are camelCase (Prisma default, no @map used).
 // Supabase PostgREST accepts the actual column names.
@@ -57,13 +62,28 @@ export async function POST(request: NextRequest) {
     const authResult = await enforceSuperAdmin(request);
     if (!authResult.success) return authResult.response;
 
-    const { name, description } = await request.json();
+    const { name, description, permissions } = await request.json();
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'Nama role wajib diisi' }, { status: 400 });
     }
 
     const roleName = name.trim();
+
+    // Validate permissions if provided
+    let permissionsJson: string | null = null;
+    if (permissions && Array.isArray(permissions)) {
+      // Validate each permission is a built-in role
+      const validPermissions = permissions.filter((p: string) =>
+        (BUILT_IN_ROLES as readonly string[]).includes(p),
+      );
+      if (validPermissions.length === 0 && permissions.length > 0) {
+        return NextResponse.json({ error: 'Permission tidak valid. Gunakan role bawaan: ' + BUILT_IN_ROLES.join(', ') }, { status: 400 });
+      }
+      permissionsJson = JSON.stringify(validPermissions);
+    } else if (permissions !== undefined && permissions !== null) {
+      return NextResponse.json({ error: 'Permissions harus berupa array string' }, { status: 400 });
+    }
 
     // Check uniqueness
     const { data: existing } = await db
@@ -82,6 +102,7 @@ export async function POST(request: NextRequest) {
         id: generateId(),
         name: roleName,
         description: description || null,
+        permissions: permissionsJson,
         created_by_id: authResult.userId!,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { toCamelCase } from '@/lib/supabase-helpers';
 import { enforceSuperAdmin } from '@/lib/require-auth';
+import { BUILT_IN_ROLES } from '@/lib/role-permissions';
 
 // NOTE: Database columns are camelCase (Prisma default, no @map used).
 
@@ -33,6 +34,20 @@ export async function PATCH(
     }
     if (data.description !== undefined) {
       updateData.description = data.description || null;
+    }
+
+    // Handle permissions update
+    if (data.permissions !== undefined) {
+      if (data.permissions === null || data.permissions === undefined) {
+        updateData.permissions = null;
+      } else if (Array.isArray(data.permissions)) {
+        const validPermissions = data.permissions.filter((p: string) =>
+          (BUILT_IN_ROLES as readonly string[]).includes(p),
+        );
+        updateData.permissions = JSON.stringify(validPermissions);
+      } else {
+        return NextResponse.json({ error: 'Permissions harus berupa array string atau null' }, { status: 400 });
+      }
     }
 
     const { data: updated, error } = await db

@@ -1,6 +1,6 @@
 // Core Types for Razkindo ERP
 
-export type UserRole = 'super_admin' | 'sales' | 'kurir' | 'keuangan';
+export type UserRole = 'super_admin' | 'sales' | 'kurir' | 'keuangan' | (string & {});
 export type UserStatus = 'pending' | 'approved' | 'rejected';
 export type TransactionType = 'sale' | 'purchase' | 'expense' | 'salary';
 export type TransactionStatus = 'pending' | 'approved' | 'paid' | 'cancelled';
@@ -30,6 +30,9 @@ export interface User {
   farCommission: number;
   createdAt: Date;
   updatedAt: Date;
+  customRoleId?: string | null;
+  customRole?: { id: string; name: string; description: string | null; permissions?: string | null } | null;
+  effectiveRoles?: string[];
 }
 
 // Unit
