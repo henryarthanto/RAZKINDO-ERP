@@ -153,34 +153,27 @@ export default function BankMutationsTab({ bankAccounts }: BankMutationsTabProps
   });
   const mootaBanks = Array.isArray(mootaBanksData?.banks) ? mootaBanksData.banks : [];
 
-  // Auto-sync bank balances from Moota when banks first load
-  const hasAutoSynced = useRef(false);
+  // Auto-sync bank balances from Moota (throttled every 5 minutes)
+  const lastSyncTime = useRef(0);
+  const isSyncingRef = useRef(false);
   const bankAccountsData = queryClient.getQueryData<{ bankAccounts: any[] }>(['bank-accounts']);
-  const syncBankBalanceSilent = useMutation({
-    mutationFn: () => apiFetch('/api/finance/moota/sync-balance', { method: 'POST' }),
-  });
+
+  const silentSyncBalance = useCallback(() => {
+    if (isSyncingRef.current) return;
+    const now = Date.now();
+    if (now - lastSyncTime.current < 5 * 60 * 1000) return; // 5 min throttle
+    lastSyncTime.current = now;
+    isSyncingRef.current = true;
+    apiFetch('/api/finance/moota/sync-balance', { method: 'POST' })
+      .then(() => { queryClient.invalidateQueries({ queryKey: ['bank-accounts'] }); })
+      .catch(() => {})
+      .finally(() => { isSyncingRef.current = false; });
+  }, [queryClient]);
 
   useEffect(() => {
-    if (hasAutoSynced.current || mootaBanks.length === 0 || !bankAccountsData?.bankAccounts) return;
-    hasAutoSynced.current = true;
-
-    const allAccounts = bankAccountsData.bankAccounts;
-    let needsSync = false;
-    for (const bank of mootaBanks) {
-      const mootaBal = Number(bank.balance) || 0;
-      const sysBank = allAccounts.find((ba: any) => ba.accountNo === bank.account_number);
-      if (sysBank && Math.abs(mootaBal - Number(sysBank.balance || 0)) > 1) {
-        needsSync = true;
-        break;
-      }
-    }
-
-    if (needsSync) {
-      syncBankBalanceSilent.mutateAsync().then(() => {
-        queryClient.invalidateQueries({ queryKey: ['bank-accounts'] });
-      }).catch(() => {});
-    }
-  }, [mootaBanks, bankAccountsData]);
+    if (mootaBanks.length === 0 || !bankAccountsData?.bankAccounts) return;
+    silentSyncBalance();
+  }, [mootaBanks, bankAccountsData, silentSyncBalance]);
 
   // Auto-select first bank — derive instead of setState in effect
   const effectiveBankId = selectedBankId || (mootaBanks.length > 0 ? mootaBanks[0].bank_id : '');
@@ -207,16 +200,6 @@ export default function BankMutationsTab({ bankAccounts }: BankMutationsTabProps
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['piutang-for-mutation'] });
     },
-  });
-
-  // Sync bank balance from Moota (manual button)
-  const syncBankBalance = useMutation({
-    mutationFn: () => apiFetch('/api/finance/moota/sync-balance', { method: 'POST' }),
-    onSuccess: () => {
-      toast.success('Saldo rekening berhasil disinkronkan dari Moota');
-      queryClient.invalidateQueries({ queryKey: ['bank-accounts'] });
-    },
-    onError: () => toast.error('Gagal sinkronisasi saldo dari Moota'),
   });
 
   // Fetch ALL active piutang for lunas dialog (only when dialog is open)
@@ -281,6 +264,10 @@ export default function BankMutationsTab({ bankAccounts }: BankMutationsTabProps
     onSuccess: (data: any) => {
       toast.success(data.message || 'Refresh berhasil!');
       queryClient.invalidateQueries({ queryKey: ['moota-mutations'] });
+      // Also refetch banks (balance may have changed after scrape) and sync
+      refetchBanks();
+      lastSyncTime.current = 0; // Allow immediate sync after refresh
+      setTimeout(() => silentSyncBalance(), 2000); // Wait for Moota to process
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -528,26 +515,6 @@ export default function BankMutationsTab({ bankAccounts }: BankMutationsTabProps
               );
             })}
             </div>
-            {/* Sync button if any bank has balance mismatch */}
-            {mootaBanks.some(bank => {
-              const sysBank = bankAccounts.find((ba: any) => ba.accountNo === bank.account_number);
-              return sysBank && Math.abs(Number(bank.balance) - Number(sysBank.balance)) > 1;
-            }) && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-[10px] gap-1 border-amber-200 text-amber-700 hover:bg-amber-50"
-                onClick={() => syncBankBalance.mutate()}
-                disabled={syncBankBalance.isPending}
-              >
-                {syncBankBalance.isPending ? (
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Building2 className="w-3 h-3" />
-                )}
-                Sync Saldo dari Moota
-              </Button>
-            )}
             </div>
           )}
 
