@@ -9,7 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiFetch } from '@/lib/api-client';
 import { useDynamicFavicon } from '@/hooks/use-dynamic-favicon';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
-import { useRealtimeSync } from '@/hooks/use-realtime-sync';
+import { useSupabaseRealtime } from '@/hooks/use-supabase-realtime';
 import { disconnectWebSocket } from '@/hooks/use-websocket';
 import { cn } from '@/lib/utils';
 import { formatDateTime, formatCurrency, getInitials } from '@/lib/erp-helpers';
@@ -269,11 +269,12 @@ function MainApp() {
   };
 
   // =================================================================
-  // REALTIME SYNC - WebSocket connection + auto invalidation
-  // When any user makes changes, all connected clients in the same
-  // unit/role automatically refresh their relevant data.
+  // REALTIME SYNC - Supabase Realtime + auto invalidation
+  // When any user makes changes, all connected clients automatically
+  // refresh their relevant data via Supabase postgres_changes.
+  // Falls back to polling intervals if Realtime is not enabled.
   // =================================================================
-  useRealtimeSync();
+  useSupabaseRealtime();
 
   // Fetch app settings for sidebar branding
   const { data: mainSettingsData } = useQuery({

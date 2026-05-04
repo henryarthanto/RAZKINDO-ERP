@@ -1,5 +1,5 @@
 // =====================================================================
-// Razkindo ERP Service Worker v6 — STB Optimized
+// Razkindo ERP Service Worker v7 — STB Optimized + Push Notifications
 //
 // Features:
 // - Aggressive static asset caching (cache-first strategy)
@@ -7,9 +7,10 @@
 // - Offline fallback page
 // - Background cache cleanup on activate
 // - Stale-while-revalidate for _next assets
+// - Push notification support (VAPID)
 // =====================================================================
 
-const CACHE_NAME = 'razkindo-erp-v6';
+const CACHE_NAME = 'razkindo-erp-v7';
 const OFFLINE_CACHE = 'razkindo-offline-v1';
 
 const STATIC_ASSETS = [
@@ -43,6 +44,72 @@ self.addEventListener('activate', (event) => {
     })
   );
   self.clients.claim();
+});
+
+// ================================
+// PUSH NOTIFICATION HANDLER
+// ================================
+
+self.addEventListener('push', (event) => {
+  let data = {
+    title: 'Razkindo ERP',
+    body: 'Notifikasi baru',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    data: {},
+    tag: 'default',
+    renotify: false,
+  };
+
+  if (event.data) {
+    try {
+      data = { ...data, ...event.data.json() };
+    } catch {
+      // Use plain text as body
+      data.body = event.data.text();
+    }
+  }
+
+  const options: NotificationOptions = {
+    body: data.body,
+    icon: data.icon,
+    badge: data.badge,
+    data: data.data || {},
+    tag: data.tag || 'default',
+    renotify: data.renotify || false,
+    vibrate: [100, 50, 100], // Vibration pattern
+    actions: data.data?.actions || [],
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
+});
+
+// Handle notification click
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const data = event.notification.data || {};
+  const urlToOpen = data.url || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // Focus existing window if available
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // Otherwise open new window
+      return self.clients.openWindow(urlToOpen);
+    })
+  );
+});
+
+// Handle notification close (for analytics if needed)
+self.addEventListener('notificationclose', (event) => {
+  // Could track notification dismissal analytics here
 });
 
 // ================================

@@ -25,6 +25,7 @@ const PUBLIC_PATHS = [
   '/api/setup-schema',      // Initial setup
   '/api/generate-image',    // Image generation endpoint
   '/api/export/',           // Export endpoints (have own auth)
+  '/api/payments/qris/callback', // QRIS payment webhook (Tripay)
 ];
 
 // ─── Rate limiting (in-memory, Edge compatible) ─────────────────────

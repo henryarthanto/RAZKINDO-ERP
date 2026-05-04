@@ -4,20 +4,38 @@ import { toCamelCase, createLog, createEvent } from '@/lib/supabase-helpers';
 import { enforceSuperAdmin } from '@/lib/require-auth';
 import { wsTransactionUpdate } from '@/lib/ws-dispatch';
 import { atomicUpdateBalance, atomicUpdatePoolBalance } from '@/lib/atomic-ops';
+import { runInTransaction } from '@/lib/db-transaction';
 
 const CANCEL_MIN_BALANCE = -999999999999999;
 
+/**
+ * POST /api/transactions/[id]/cancel
+ *
+ * Cancel a transaction using SAGA pattern with compensating transactions.
+ * Each step has a rollback to ensure data consistency on failure.
+ *
+ * Flow:
+ *   Step 1: Fetch transaction + validate
+ *   Step 2: Reverse stock (sale: restore, purchase: reverse HPP)
+ *   Step 3: Cancel receivable
+ *   Step 4: Reverse payment balances
+ *   Step 5: Reverse pool balances
+ *   Step 6: Reverse courier cash
+ *   Step 7: Delete payments
+ *   Step 8: Reverse customer stats + cashback
+ *   Step 9: Set transaction status to cancelled
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Only super_admin can cancel/delete transactions
     const authResult = await enforceSuperAdmin(request);
     if (!authResult.success) return authResult.response;
 
     const { id } = await params;
-    
+
+    // ── Fetch transaction ──
     const { data: transaction, error: txError } = await db
       .from('transactions')
       .select('*')
@@ -29,296 +47,364 @@ export async function POST(
     }
 
     if (!transaction) {
-      return NextResponse.json(
-        { error: 'Transaksi tidak ditemukan' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Transaksi tidak ditemukan' }, { status: 404 });
     }
 
     const txCamel = toCamelCase(transaction);
 
     if (txCamel.status === 'cancelled') {
-      return NextResponse.json(
-        { error: 'Transaksi sudah dibatalkan' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Transaksi sudah dibatalkan' }, { status: 400 });
     }
 
-    // Sequential operations (no transactions in Supabase JS)
+    // Track rollback data
+    let reversedStockItems: Array<{ productId: string; qty: number; unitProductId?: string; type: 'sale' | 'purchase'; originalHpp?: number }> = [];
+    let reversedPayments: Array<{ cashBoxId?: string; bankAccountId?: string; amount: number; delta: number }> = [];
+    let reversedPoolHpp = 0;
+    let reversedPoolProfit = 0;
+    let reversedCourierCash = 0;
+    let courierCashId = '';
+    let deletedPaymentIds: string[] = [];
+    let receivableId = '';
+
+    // Only approved/paid transactions need full reversal
     if (txCamel.status === 'approved' || txCamel.status === 'paid') {
-      // Get transaction items
-      const { data: items } = await db
-        .from('transaction_items')
-        .select('*')
-        .eq('transaction_id', id);
 
-      // Restore stock for sale/cancel stock for purchase
-      // OPTIMIZATION: Batch-fetch all products before the loop (eliminates N+1)
-      const allItemProductIds = [...new Set((items || []).map((i: any) => (toCamelCase(i) || {}).productId).filter(Boolean))];
-      const { data: cancelProductsBatch } = await db
-        .from('products')
-        .select('*, unit_products:unit_products(*)')
-        .in('id', allItemProductIds);
-      const cancelProductLookup = new Map((cancelProductsBatch || []).map((p: any) => [p.id, p]));
+      await runInTransaction([
 
-      // OPTIMIZATION: Batch-fetch all unit_products for this unit (eliminates N+1 per-item queries)
-      const perUnitProductIds = (cancelProductsBatch || [])
-        .filter((p: any) => p.stock_type === 'per_unit')
-        .map((p: any) => p.id);
-      let unitProductLookup = new Map<string, any>();
-      if (perUnitProductIds.length > 0) {
-        const { data: unitProductsBatch } = await db
-          .from('unit_products')
-          .select('*')
-          .eq('unit_id', txCamel.unitId)
-          .in('product_id', perUnitProductIds);
-        unitProductLookup = new Map((unitProductsBatch || []).map((up: any) => [up.product_id, up]));
-      }
+        // Step 1: Fetch items + batch products
+        {
+          name: 'fetch-items-and-products',
+          execute: async () => {
+            const { data: items } = await db.from('transaction_items').select('*').eq('transaction_id', id);
 
-      for (const item of (items || [])) {
-        const itemCamel = toCamelCase(item);
-        const stockQty = itemCamel.qtyInSubUnit ?? itemCamel.qty;
-        
-        if (txCamel.type === 'sale') {
-          const product = cancelProductLookup.get(itemCamel.productId);
-          if (!product) continue;
-          
-          if (product.stock_type === 'per_unit') {
-            const unitProduct = unitProductLookup.get(itemCamel.productId);
-            
-            if (unitProduct) {
-              // Use atomic RPC for stock restoration
-              const { error: rpcError } = await db.rpc('increment_unit_stock', {
-                p_unit_product_id: unitProduct.id,
-                p_qty: stockQty,
-              });
-              if (rpcError) {
-                console.error('[CANCEL] Failed to increment unit stock via RPC, falling back:', rpcError.message);
-                await db
-                  .from('unit_products')
-                  .update({ stock: unitProduct.stock + stockQty })
-                  .eq('id', unitProduct.id);
+            const allProductIds = [...new Set((items || []).map((i: any) => (toCamelCase(i) || {}).productId).filter(Boolean))];
+            const { data: productsBatch } = await db
+              .from('products')
+              .select('*, unit_products:unit_products(*)')
+              .in('id', allProductIds);
+
+            // Fetch unit_products for per_unit products
+            const perUnitProductIds = (productsBatch || [])
+              .filter((p: any) => p.stock_type === 'per_unit')
+              .map((p: any) => p.id);
+            let unitProductLookup = new Map<string, any>();
+            if (perUnitProductIds.length > 0) {
+              const { data: unitProductsBatch } = await db
+                .from('unit_products')
+                .select('*')
+                .eq('unit_id', txCamel.unitId)
+                .in('product_id', perUnitProductIds);
+              unitProductLookup = new Map((unitProductsBatch || []).map((up: any) => [up.product_id, up]));
+            }
+
+            return { items: items || [], productLookup: new Map((productsBatch || []).map((p: any) => [p.id, p])), unitProductLookup };
+          },
+        },
+
+        // Step 2: Reverse stock
+        {
+          name: 'reverse-stock',
+          execute: async (fetchResult) => {
+            const { items, productLookup, unitProductLookup } = fetchResult as any;
+
+            for (const item of items) {
+              const itemCamel = toCamelCase(item);
+              const stockQty = itemCamel.qtyInSubUnit ?? itemCamel.qty;
+              const product = productLookup.get(itemCamel.productId);
+              if (!product) continue;
+
+              if (txCamel.type === 'sale') {
+                // RESTORE stock for sale
+                if (product.stock_type === 'per_unit') {
+                  const unitProduct = unitProductLookup.get(itemCamel.productId);
+                  if (unitProduct) {
+                    await db.rpc('increment_unit_stock', { p_unit_product_id: unitProduct.id, p_qty: stockQty });
+                    reversedStockItems.push({ productId: itemCamel.productId, qty: stockQty, unitProductId: unitProduct.id, type: 'sale' });
+                  } else {
+                    await db.rpc('increment_stock', { p_product_id: itemCamel.productId, p_qty: stockQty });
+                    reversedStockItems.push({ productId: itemCamel.productId, qty: stockQty, type: 'sale' });
+                  }
+                } else {
+                  await db.rpc('increment_stock', { p_product_id: itemCamel.productId, p_qty: stockQty });
+                  reversedStockItems.push({ productId: itemCamel.productId, qty: stockQty, type: 'sale' });
+                }
+              } else if (txCamel.type === 'purchase') {
+                // REVERSE stock for purchase (remove stock + HPP)
+                const unitProductId = product.stock_type === 'per_unit'
+                  ? (unitProductLookup.get(itemCamel.productId)?.id || null)
+                  : null;
+
+                const { error: reverseError } = await db.rpc('reverse_purchase_stock_with_hpp', {
+                  p_product_id: itemCamel.productId,
+                  p_qty: stockQty,
+                  p_original_hpp: Number(itemCamel.hpp) || 0,
+                  p_unit_product_id: unitProductId,
+                });
+                if (reverseError) {
+                  throw new Error(`Gagal membatalkan stok pembelian untuk produk ${itemCamel.productId}`);
+                }
+                reversedStockItems.push({ productId: itemCamel.productId, qty: stockQty, type: 'purchase', unitProductId: unitProductId || undefined, originalHpp: Number(itemCamel.hpp) || 0 });
               }
-              // Note: recalc_global_stock deferred to after the loop
-            } else {
-              const { error: rpcError } = await db.rpc('increment_stock', {
-                p_product_id: itemCamel.productId,
-                p_qty: stockQty,
-              });
-              if (rpcError) {
-                await db
-                  .from('products')
-                  .update({ global_stock: product.global_stock + stockQty })
-                  .eq('id', itemCamel.productId);
+            }
+
+            // Batch recalc global stock for per_unit sale products
+            if (txCamel.type === 'sale') {
+              const perUnitIds = [...new Set(
+                reversedStockItems.filter(i => i.unitProductId).map(i => i.productId)
+              )];
+              await Promise.all(perUnitIds.map(pid =>
+                db.rpc('recalc_global_stock', { p_product_id: pid }).catch((err: any) =>
+                  console.error('[CANCEL] recalc_global_stock failed for', pid, err.message)
+                )
+              ));
+            }
+
+            return true;
+          },
+          rollback: async () => {
+            // Reverse the stock reversal (re-deduct for sale, re-add for purchase)
+            for (const item of reversedStockItems.reverse()) {
+              try {
+                if (item.type === 'sale') {
+                  if (item.unitProductId) {
+                    await db.rpc('decrement_unit_stock', { p_unit_product_id: item.unitProductId, p_qty: item.qty });
+                  } else {
+                    await db.rpc('decrement_stock', { p_product_id: item.productId, p_qty: item.qty });
+                  }
+                } else if (item.type === 'purchase') {
+                  await db.rpc('increment_stock_with_hpp', {
+                    p_product_id: item.productId,
+                    p_qty: item.qty,
+                    p_new_hpp: item.originalHpp || 0,
+                  });
+                }
+              } catch (e) {
+                console.error('[SAGA] Rollback stock reverse failed:', e);
               }
             }
-          } else {
-            // Use atomic RPC for centralized stock restoration
-            const { error: rpcError } = await db.rpc('increment_stock', {
-              p_product_id: itemCamel.productId,
-              p_qty: stockQty,
-            });
-            if (rpcError) {
-              await db
-                .from('products')
-                .update({ global_stock: product.global_stock + stockQty })
-                .eq('id', itemCamel.productId);
+          },
+        },
+
+        // Step 3: Cancel receivable
+        {
+          name: 'cancel-receivable',
+          execute: async () => {
+            const { data: receivable } = await db
+              .from('receivables')
+              .select('*')
+              .eq('transaction_id', id)
+              .maybeSingle();
+
+            if (receivable && receivable.status !== 'cancelled' && receivable.status !== 'paid') {
+              receivableId = receivable.id;
+              await db.from('receivables').update({ status: 'cancelled' }).eq('id', receivable.id);
             }
-          }
-        } else if (txCamel.type === 'purchase') {
-          // RACE FIX #1: Use atomic RPC to reverse stock + HPP in a single locked operation
-          const product = cancelProductLookup.get(itemCamel.productId);
-          if (product) {
-            const unitProductId = product.stock_type === 'per_unit'
-              ? (unitProductLookup.get(itemCamel.productId)?.id || null)
-              : null;
-
-            const { error: reverseError } = await db.rpc('reverse_purchase_stock_with_hpp', {
-              p_product_id: itemCamel.productId,
-              p_qty: stockQty,
-              p_original_hpp: Number(itemCamel.hpp) || 0,
-              p_unit_product_id: unitProductId,
-            });
-            if (reverseError) {
-              console.error('[CANCEL] reverse_purchase_stock_with_hpp RPC failed:', reverseError.message);
-              throw new Error(`Gagal membatalkan stok pembelian untuk produk ${itemCamel.productId}: ${reverseError.message}`);
+            return true;
+          },
+          rollback: async () => {
+            if (receivableId) {
+              await db.from('receivables').update({ status: 'pending' }).eq('id', receivableId).catch(() => {});
             }
-          }
-        }
-      }
+          },
+        },
 
-      // OPTIMIZATION: Batch recalc global stock for all per_unit products affected
-      // (deferred from the per-item loop above to avoid N+1 RPC calls)
-      if (perUnitProductIds.length > 0 && txCamel.type === 'sale') {
-        const affectedProductIds = [...new Set((items || [])
-          .map((i: any) => toCamelCase(i))
-          .filter((ic: any) => {
-            const p = cancelProductLookup.get(ic.productId);
-            return p && p.stock_type === 'per_unit';
-          })
-          .map((ic: any) => ic.productId))];
-        await Promise.all(affectedProductIds.map(pid =>
-          db.rpc('recalc_global_stock', { p_product_id: pid }).catch((err: any) =>
-            console.error('[CANCEL] recalc_global_stock failed for', pid, err.message)
-          )
-        ));
-      }
+        // Step 4: Reverse payment balances
+        {
+          name: 'reverse-payments',
+          execute: async () => {
+            const { data: payments } = await db.from('payments').select('*').eq('transaction_id', id);
 
-      // Cancel linked receivable
-      const { data: receivable } = await db
-        .from('receivables')
-        .select('*')
-        .eq('transaction_id', id)
-        .maybeSingle();
-      if (receivable && receivable.status !== 'cancelled' && receivable.status !== 'paid') {
-        await db
-          .from('receivables')
-          .update({ status: 'cancelled' })
-          .eq('id', receivable.id);
-      }
+            for (const payment of (payments || [])) {
+              deletedPaymentIds.push(payment.id);
+              const delta = txCamel.type === 'sale' ? -(Number(payment.amount) || 0) : (Number(payment.amount) || 0);
 
-      // Reverse all financial balances from linked payments
-      const { data: payments } = await db
-        .from('payments')
-        .select('*')
-        .eq('transaction_id', id);
+              if (payment.cash_box_id) {
+                try {
+                  await atomicUpdateBalance('cash_boxes', payment.cash_box_id, delta, CANCEL_MIN_BALANCE);
+                  reversedPayments.push({ cashBoxId: payment.cash_box_id, amount: Number(payment.amount), delta });
+                } catch { /* best effort */ }
+              }
+              if (payment.bank_account_id) {
+                try {
+                  await atomicUpdateBalance('bank_accounts', payment.bank_account_id, delta, CANCEL_MIN_BALANCE);
+                  reversedPayments.push({ bankAccountId: payment.bank_account_id, amount: Number(payment.amount), delta });
+                } catch { /* best effort */ }
+              }
+            }
+            return payments || [];
+          },
+          rollback: async (payments) => {
+            // Re-apply the reversed deltas
+            for (const rp of reversedPayments.reverse()) {
+              try {
+                if (rp.cashBoxId) {
+                  await atomicUpdateBalance('cash_boxes', rp.cashBoxId, -rp.delta, CANCEL_MIN_BALANCE);
+                }
+                if (rp.bankAccountId) {
+                  await atomicUpdateBalance('bank_accounts', rp.bankAccountId, -rp.delta, CANCEL_MIN_BALANCE);
+                }
+              } catch { /* best effort rollback */ }
+            }
+          },
+        },
 
-      for (const payment of (payments || [])) {
-        // Sale: money was credited → decrement to reverse
-        // Purchase: money was debited → increment to reverse
-        if (payment.cash_box_id) {
-          const delta = txCamel.type === 'sale' ? -(Number(payment.amount) || 0) : (Number(payment.amount) || 0);
-          try {
-            await atomicUpdateBalance('cash_boxes', payment.cash_box_id, delta, CANCEL_MIN_BALANCE);
-          } catch { /* best effort on cancellation rollback */ }
-        }
-        if (payment.bank_account_id) {
-          const delta = txCamel.type === 'sale' ? -(Number(payment.amount) || 0) : (Number(payment.amount) || 0);
-          try {
-            await atomicUpdateBalance('bank_accounts', payment.bank_account_id, delta, CANCEL_MIN_BALANCE);
-          } catch { /* best effort on cancellation rollback */ }
-        }
-      }
+        // Step 5: Reverse pool balances
+        {
+          name: 'reverse-pool-balances',
+          execute: async (payments) => {
+            if (txCamel.type !== 'sale') return true;
 
-      // Reverse pool balances from payments (only for sale transactions)
-      if (txCamel.type === 'sale') {
-        let totalHppToReverse = 0;
-        let totalProfitToReverse = 0;
-        for (const payment of (payments || [])) {
-          totalHppToReverse += Number(payment.hpp_portion) || 0;
-          totalProfitToReverse += Number(payment.profit_portion) || 0;
-        }
+            for (const payment of (payments || [])) {
+              reversedPoolHpp += Number(payment.hpp_portion) || 0;
+              reversedPoolProfit += Number(payment.profit_portion) || 0;
+            }
 
-        if (totalHppToReverse > 0) {
-          try {
-            await atomicUpdatePoolBalance('pool_hpp_paid_balance', -totalHppToReverse, CANCEL_MIN_BALANCE);
-          } catch { /* best effort on cancellation rollback */ }
-        }
-        if (totalProfitToReverse > 0) {
-          try {
-            await atomicUpdatePoolBalance('pool_profit_paid_balance', -totalProfitToReverse, CANCEL_MIN_BALANCE);
-          } catch { /* best effort on cancellation rollback */ }
-        }
-      }
+            if (reversedPoolHpp > 0) {
+              try { await atomicUpdatePoolBalance('pool_hpp_paid_balance', -reversedPoolHpp, CANCEL_MIN_BALANCE); } catch { /* best effort */ }
+            }
+            if (reversedPoolProfit > 0) {
+              try { await atomicUpdatePoolBalance('pool_profit_paid_balance', -reversedPoolProfit, CANCEL_MIN_BALANCE); } catch { /* best effort */ }
+            }
+            return true;
+          },
+          rollback: async () => {
+            // Re-add pool balances
+            if (reversedPoolHpp > 0) {
+              try { await atomicUpdatePoolBalance('pool_hpp_paid_balance', reversedPoolHpp, CANCEL_MIN_BALANCE); } catch { /* best effort */ }
+            }
+            if (reversedPoolProfit > 0) {
+              try { await atomicUpdatePoolBalance('pool_profit_paid_balance', reversedPoolProfit, CANCEL_MIN_BALANCE); } catch { /* best effort */ }
+            }
+          },
+        },
 
-      // Reverse CourierCash if this was a cash delivery
-      if (txCamel.deliveredAt && txCamel.courierId && txCamel.paymentMethod === 'cash' && txCamel.type === 'sale') {
-        const { data: courierCash } = await db
-          .from('courier_cash')
-          .select('*')
-          .eq('courier_id', txCamel.courierId)
-          .eq('unit_id', txCamel.unitId)
-          .maybeSingle();
-        if (courierCash) {
-          const reverseAmount = Math.min(txCamel.paidAmount || 0, courierCash.balance);
-          await db
-            .from('courier_cash')
-            .update({
-              balance: courierCash.balance - reverseAmount,
-              total_collected: courierCash.total_collected - reverseAmount
-            })
-            .eq('id', courierCash.id);
-        }
-      }
+        // Step 6: Reverse courier cash
+        {
+          name: 'reverse-courier-cash',
+          execute: async () => {
+            if (!txCamel.deliveredAt || !txCamel.courierId || txCamel.paymentMethod !== 'cash' || txCamel.type !== 'sale') {
+              return true;
+            }
 
-      // Delete all payment records
-      await db
-        .from('payments')
-        .delete()
-        .eq('transaction_id', id);
+            const { data: courierCash } = await db
+              .from('courier_cash')
+              .select('*')
+              .eq('courier_id', txCamel.courierId)
+              .eq('unit_id', txCamel.unitId)
+              .maybeSingle();
 
-      // RACE FIX #2: Reverse customer stats atomically for sale transactions
-      if (txCamel.customerId && txCamel.type === 'sale') {
-        try {
-          await db.rpc('atomic_increment_customer_stats', {
-            p_customer_id: txCamel.customerId,
-            p_order_delta: -1,
-            p_spent_delta: -(txCamel.total || 0),
-          });
-        } catch (statsErr) {
-          console.error('[CANCEL] atomic_increment_customer_stats RPC failed (non-blocking):', statsErr);
-        }
+            if (courierCash) {
+              courierCashId = courierCash.id;
+              reversedCourierCash = Math.min(txCamel.paidAmount || 0, courierCash.balance);
+              await db.from('courier_cash').update({
+                balance: courierCash.balance - reversedCourierCash,
+                total_collected: courierCash.total_collected - reversedCourierCash,
+              }).eq('id', courierCash.id);
+            }
+            return true;
+          },
+          rollback: async () => {
+            if (courierCashId && reversedCourierCash > 0) {
+              await db.from('courier_cash').update({
+                balance: db.raw('balance + ?' as any, [reversedCourierCash]),
+                total_collected: db.raw('total_collected + ?' as any, [reversedCourierCash]),
+              }).eq('id', courierCashId).catch(() => {});
+            }
+          },
+        },
 
-        // Reverse cashback if any was given for this transaction
-        try {
-          const { data: cbLog } = await db
-            .from('cashback_log')
-            .select('id, amount, customer_id')
-            .eq('transaction_id', id)
-            .eq('type', 'earned')
-            .maybeSingle();
-          if (cbLog && cbLog.amount > 0) {
-            // Deduct cashback balance (use RPC if available, fallback to read-then-write)
+        // Step 7: Delete payment records
+        {
+          name: 'delete-payments',
+          execute: async () => {
+            if (deletedPaymentIds.length > 0) {
+              await db.from('payments').delete().in('id', deletedPaymentIds);
+            }
+            return true;
+          },
+          rollback: async () => {
+            // Cannot easily rollback deleted payments — this is best-effort
+            console.warn('[SAGA] Cannot rollback deleted payment records. Manual intervention may be needed.');
+          },
+        },
+
+        // Step 8: Reverse customer stats + cashback
+        {
+          name: 'reverse-customer-stats',
+          execute: async () => {
+            if (!txCamel.customerId || txCamel.type !== 'sale') return true;
+
             try {
-              // BUG FIX #5: Changed p_amount → p_delta to match RPC signature
-              await db.rpc('atomic_deduct_cashback', {
-                p_customer_id: cbLog.customer_id,
-                p_delta: cbLog.amount,
+              await db.rpc('atomic_increment_customer_stats', {
+                p_customer_id: txCamel.customerId,
+                p_order_delta: -1,
+                p_spent_delta: -(txCamel.total || 0),
               });
-            } catch {
-              // RPC may not exist — fallback to read-then-write
-              const { data: cbCustomer, error: cbError } = await db
-                .from('customers')
-                .select('cashback_balance')
-                .eq('id', cbLog.customer_id)
-                .maybeSingle();
-              if (cbError) {
-                console.error('[CANCEL] Failed to fetch customer for cashback reverse:', cbError);
-              } else if (cbCustomer) {
-                await db
-                  .from('customers')
-                  .update({ cashback_balance: Math.max(0, (cbCustomer.cashback_balance || 0) - cbLog.amount) })
-                  .eq('id', cbLog.customer_id);
-              }
+            } catch (statsErr) {
+              console.error('[CANCEL] atomic_increment_customer_stats RPC failed (non-blocking):', statsErr);
             }
-            // Archive the cashback log entry
-            await db
-              .from('cashback_log')
-              .update({
-                type: 'reversed',
-                description: `Dibatalkan — Rp ${cbLog.amount.toLocaleString('id-ID')} dikembalikan dari cashback (pembatalan invoice)`,
-              })
-              .eq('id', cbLog.id);
-          }
-        } catch (cbReverseErr) {
-          console.error('[CANCEL] Failed to reverse cashback (non-blocking):', cbReverseErr);
-        }
-      }
+
+            // Reverse cashback
+            try {
+              const { data: cbLog } = await db
+                .from('cashback_log')
+                .select('id, amount, customer_id')
+                .eq('transaction_id', id)
+                .eq('type', 'earned')
+                .maybeSingle();
+              if (cbLog && cbLog.amount > 0) {
+                try {
+                  await db.rpc('atomic_deduct_cashback', {
+                    p_customer_id: cbLog.customer_id,
+                    p_delta: cbLog.amount,
+                  });
+                } catch {
+                  const { data: cbCustomer } = await db
+                    .from('customers')
+                    .select('cashback_balance')
+                    .eq('id', cbLog.customer_id)
+                    .maybeSingle();
+                  if (cbCustomer) {
+                    await db.from('customers').update({
+                      cashback_balance: Math.max(0, (cbCustomer.cashback_balance || 0) - cbLog.amount),
+                    }).eq('id', cbLog.customer_id);
+                  }
+                }
+                await db.from('cashback_log').update({
+                  type: 'reversed',
+                  description: `Dibatalkan — Rp ${cbLog.amount.toLocaleString('id-ID')} dikembalikan dari cashback (pembatalan invoice)`,
+                }).eq('id', cbLog.id);
+              }
+            } catch (cbErr) {
+              console.error('[CANCEL] Failed to reverse cashback (non-blocking):', cbErr);
+            }
+
+            return true;
+          },
+          rollback: async () => {
+            if (!txCamel.customerId || txCamel.type !== 'sale') return;
+            try {
+              await db.rpc('atomic_increment_customer_stats', {
+                p_customer_id: txCamel.customerId,
+                p_order_delta: 1,
+                p_spent_delta: txCamel.total || 0,
+              });
+            } catch { /* best effort */ }
+          },
+        },
+      ]);
+
     } else {
-      // Pending transactions — cancel linked receivable
+      // Pending transactions — cancel receivable + reverse stats only
       const { data: pendingReceivable } = await db
         .from('receivables')
         .select('*')
         .eq('transaction_id', id)
         .maybeSingle();
       if (pendingReceivable && pendingReceivable.status !== 'cancelled' && pendingReceivable.status !== 'paid') {
-        await db
-          .from('receivables')
-          .update({ status: 'cancelled' })
-          .eq('id', pendingReceivable.id);
+        await db.from('receivables').update({ status: 'cancelled' }).eq('id', pendingReceivable.id);
       }
 
-      // RACE FIX #2: Reverse customer stats atomically for pending sale transactions
       if (txCamel.customerId && txCamel.type === 'sale') {
         try {
           await db.rpc('atomic_increment_customer_stats', {
@@ -327,13 +413,12 @@ export async function POST(
             p_spent_delta: -(txCamel.total || 0),
           });
         } catch (statsErr) {
-          console.error('[CANCEL] atomic_increment_customer_stats RPC failed for pending tx (non-blocking):', statsErr);
+          console.error('[CANCEL] atomic_increment_customer_stats failed for pending tx (non-blocking):', statsErr);
         }
       }
     }
 
-    // Update transaction status + reset payment fields
-    // SECURITY: Add optimistic lock to prevent TOCTOU race with concurrent payments
+    // ── Final: Set transaction status to cancelled (optimistic lock) ──
     const { data: cancelledTx, error: cancelUpdateError } = await db
       .from('transactions')
       .update({
@@ -357,18 +442,18 @@ export async function POST(
       return NextResponse.json({ error: 'Transaksi sudah dibatalkan atau status berubah secara bersamaan' }, { status: 409 });
     }
 
-    // Log
+    // ── Logging & Events ──
     createLog(db, {
       type: 'audit',
       action: 'transaction_cancelled',
       entity: 'transaction',
       entityId: id,
-      message: 'Transaction ' + txCamel.invoiceNo + ' cancelled'
+      message: 'Transaction ' + txCamel.invoiceNo + ' cancelled',
     });
 
     createEvent(db, 'transaction_cancelled', {
       transactionId: id,
-      invoiceNo: txCamel.invoiceNo
+      invoiceNo: txCamel.invoiceNo,
     });
 
     const { data: updatedTransaction, error: refetchError } = await db
@@ -383,7 +468,6 @@ export async function POST(
 
     wsTransactionUpdate({ invoiceNo: txCamel.invoiceNo, type: txCamel.type, status: 'cancelled', unitId: txCamel.unitId });
 
-    // BUG FIX: Use cancelledTx as fallback if refetch fails
     return NextResponse.json({ transaction: toCamelCase(updatedTransaction || cancelledTx) });
   } catch (error) {
     console.error('Cancel transaction error:', error);
