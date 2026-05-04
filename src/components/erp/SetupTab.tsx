@@ -73,7 +73,11 @@ export default function SetupTab() {
         await fetchStatus();
         queryClient.invalidateQueries({ queryKey: ['settings'] });
       } else {
-        toast.error(result.error || result.message || `Gagal: ${label}`);
+        const errMsg = result.error || result.message || `Gagal: ${label}`;
+        toast.error(errMsg, {
+          description: result.detail ? result.detail.substring(0, 200) : result.hint || undefined,
+          duration: 8000,
+        });
       }
     } catch (err: any) {
       toast.error(err.message || `Gagal: ${label}`);
