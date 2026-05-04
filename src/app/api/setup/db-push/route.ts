@@ -21,6 +21,13 @@ export async function POST(request: NextRequest) {
     let prismaError = '';
 
     // ── Step 1: Try prisma db push ──
+    // Use DIRECT_URL for direct DB connection (bypasses PgBouncer which blocks DDL)
+    const originalDatabaseUrl = process.env.DATABASE_URL;
+    const directUrl = process.env.DIRECT_URL;
+    if (directUrl) {
+      process.env.DATABASE_URL = directUrl;
+    }
+
     try {
       const { execSync } = await import('child_process');
 
@@ -36,7 +43,7 @@ export async function POST(request: NextRequest) {
         // prisma generate failure is non-critical, continue with db push
       }
 
-      output = execSync('npx prisma db push --accept-data-loss --force-reset 2>&1', {
+      output = execSync('npx prisma db push --accept-data-loss 2>&1', {
         cwd: process.cwd(),
         timeout: 90_000,
         encoding: 'utf-8',
@@ -49,6 +56,13 @@ export async function POST(request: NextRequest) {
       output = stdout + stderr;
       prismaError = output.substring(0, 3000);
       console.error('[Setup:DbPush] Prisma error:', prismaError);
+    } finally {
+      // Restore original DATABASE_URL
+      if (directUrl && originalDatabaseUrl) {
+        process.env.DATABASE_URL = originalDatabaseUrl;
+      } else if (directUrl) {
+        delete process.env.DATABASE_URL;
+      }
     }
 
     // ── Step 2: Fallback — drop orphaned tables via direct SQL ──
@@ -82,9 +96,12 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Try prisma db push again after cleanup
+          // Try prisma db push again after cleanup (already using DIRECT_URL from above)
           try {
             const { execSync } = await import('child_process');
+            if (directUrl && !process.env.DATABASE_URL?.includes('db.')) {
+              process.env.DATABASE_URL = directUrl;
+            }
             output = execSync('npx prisma db push --accept-data-loss 2>&1', {
               cwd: process.cwd(),
               timeout: 90_000,

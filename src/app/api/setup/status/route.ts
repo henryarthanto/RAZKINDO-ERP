@@ -13,7 +13,7 @@ interface SetupStatus {
 
 const REALTIME_TABLES = [
   'events', 'transactions', 'products', 'payments',
-  'finance_requests', 'deliveries', 'users', 'customers',
+  'finance_requests', 'users', 'customers',
 ];
 
 /**

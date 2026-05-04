@@ -85,14 +85,6 @@ const TABLE_CHANGE_TO_QUERY_KEYS: Record<string, Record<string, string[][]>> = {
       ['finance-pools'],
     ],
   },
-  deliveries: {
-    UPDATE: [
-      ['transactions'],
-      ['dashboard'],
-      ['receivables'],
-      ['courier-dashboard'],
-    ],
-  },
   users: {
     UPDATE: [
       ['users'],
@@ -113,7 +105,7 @@ const DEBOUNCE = {
 
 function getDebounceMs(table: string): number {
   if (['transactions', 'products', 'payments'].includes(table)) return DEBOUNCE.critical;
-  if (['finance_requests', 'deliveries', 'events'].includes(table)) return DEBOUNCE.medium;
+  if (['finance_requests', 'events'].includes(table)) return DEBOUNCE.medium;
   return DEBOUNCE.normal;
 }
 

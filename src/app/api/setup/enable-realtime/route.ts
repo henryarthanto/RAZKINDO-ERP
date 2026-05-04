@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { enforceSuperAdmin } from '@/lib/require-auth';
-import { getSessionPool } from '@/lib/connection-pool';
+import { Pool } from 'pg';
 
 const REALTIME_TABLES = [
   'events', 'transactions', 'products', 'payments',
-  'finance_requests', 'deliveries', 'users', 'customers',
+  'finance_requests', 'users', 'customers',
 ];
 
 /**
@@ -21,7 +21,16 @@ export async function POST(request: NextRequest) {
     const authResult = await enforceSuperAdmin(request);
     if (!authResult.success) return authResult.response;
 
-    const pool = await getSessionPool();
+    // Use DIRECT_URL for ALTER PUBLICATION (PgBouncer doesn't support this DDL)
+    const directUrl = process.env.DIRECT_URL || process.env.DATABASE_URL;
+    if (!directUrl) {
+      return NextResponse.json({
+        success: false,
+        error: 'DIRECT_URL atau DATABASE_URL belum dikonfigurasi',
+      }, { status: 500 });
+    }
+
+    const pool = new Pool({ connectionString: directUrl, ssl: { rejectUnauthorized: false } });
     const client = await pool.connect();
 
     const successTables: string[] = [];
@@ -67,6 +76,7 @@ export async function POST(request: NextRequest) {
       }
     } finally {
       client.release();
+      await pool.end().catch(() => {});
     }
 
     const allTables = [...successTables, ...skippedTables];
