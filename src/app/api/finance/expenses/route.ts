@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/lib/supabase';
 import { verifyAuthUser } from '@/lib/token';
 import { toSnakeCase, createLog, createEvent, generateId } from '@/lib/supabase-helpers';
@@ -6,6 +7,17 @@ import { atomicUpdatePoolBalance, atomicUpdateBalance } from '@/lib/atomic-ops';
 import { financeEngine } from '@/lib/finance-engine';
 import { wsFinanceUpdate } from '@/lib/ws-dispatch';
 import { runInTransaction, createStep, type TransactionStep } from '@/lib/db-transaction';
+import { validateBody } from '@/lib/validators';
+
+const expenseCreateSchema = z.object({
+  description: z.string().min(1, 'Deskripsi pengeluaran wajib diisi'),
+  amount: z.number().positive('Jumlah harus lebih dari 0'),
+  fundSource: z.enum(['hpp_paid', 'profit_paid', 'lain_lain'], { error: 'Sumber dana (HPP/Profit/Lain-lain) wajib dipilih' }),
+  destinationType: z.enum(['bank', 'cashbox'], { error: 'Sumber pembayaran (Rekening/Brankas) wajib dipilih' }),
+  destinationId: z.string().min(1, 'Detail akun pembayaran wajib dipilih'),
+  unitId: z.string().optional(),
+  notes: z.string().optional(),
+});
 
 // =====================================================================
 // EXPENSE DIRECT CREATION — Create + Process in one step
@@ -61,29 +73,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Hanya super_admin dan keuangan yang dapat mencatat pengeluaran' }, { status: 403 });
     }
 
-    const body = await request.json();
-    const { description, amount, notes, fundSource, destinationType, destinationId, unitId } = body;
-
-    // Validate required fields
-    if (!description || typeof description !== 'string' || description.trim().length === 0) {
-      return NextResponse.json({ error: 'Deskripsi pengeluaran wajib diisi' }, { status: 400 });
+    const rawBody = await request.json();
+    const validation = validateBody(expenseCreateSchema, rawBody);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
-      return NextResponse.json({ error: 'Jumlah harus lebih dari 0' }, { status: 400 });
-    }
-
-    const validFundSources = ['hpp_paid', 'profit_paid', 'lain_lain'];
-    if (!fundSource || !validFundSources.includes(fundSource)) {
-      return NextResponse.json({ error: 'Sumber dana (HPP/Profit/Lain-lain) wajib dipilih' }, { status: 400 });
-    }
-
-    if (!destinationType || !['bank', 'cashbox'].includes(destinationType)) {
-      return NextResponse.json({ error: 'Sumber pembayaran (Rekening/Brankas) wajib dipilih' }, { status: 400 });
-    }
-
-    if (!destinationId) {
-      return NextResponse.json({ error: 'Detail akun pembayaran wajib dipilih' }, { status: 400 });
-    }
+    const { description, amount, notes, fundSource, destinationType, destinationId, unitId } = validation.data;
 
     // Validate pool balance
     const poolKeyMap: Record<string, string> = {

@@ -151,19 +151,47 @@ $$;`,
     name: 'batch_decrement_centralized_stock',
     sql: `CREATE OR REPLACE FUNCTION batch_decrement_centralized_stock(p_product_ids jsonb, p_quantities jsonb)
 RETURNS json LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_results jsonb := '[]'::jsonb; v_pid text; v_qty numeric; v_new_stock numeric; v_idx integer; v_failed jsonb := '[]'::jsonb;
+BEGIN
+  IF jsonb_array_length(p_product_ids) != jsonb_array_length(p_quantities) THEN
+    RAISE EXCEPTION 'product_ids and quantities arrays must have the same length'; END IF;
+  -- Atomic decrement: each UPDATE checks stock >= qty in the WHERE clause (no TOCTOU race)
+  -- If any product has insufficient stock, the UPDATE affects 0 rows and we collect the failure.
+  FOR v_idx IN 0 .. jsonb_array_length(p_product_ids) - 1 LOOP
+    v_pid := p_product_ids->>v_idx; v_qty := (p_quantities->>v_idx)::numeric;
+    UPDATE products SET global_stock = global_stock - v_qty
+    WHERE id = v_pid AND global_stock >= v_qty
+    RETURNING global_stock INTO v_new_stock;
+    IF NOT FOUND THEN
+      v_failed := v_failed || jsonb_build_object('product_id', v_pid, 'requested', v_qty);
+    ELSE
+      v_results := v_results || jsonb_build_object('product_id', v_pid, 'new_stock', v_new_stock);
+    END IF;
+  END LOOP;
+  -- If any product had insufficient stock, raise exception (entire transaction rolls back)
+  IF jsonb_array_length(v_failed) > 0 THEN
+    RAISE EXCEPTION 'Stok tidak cukup: %', v_failed::text;
+  END IF;
+  RETURN v_results;
+END;
+$$;`,
+  },
+  {
+    name: 'batch_increment_centralized_stock',
+    sql: `CREATE OR REPLACE FUNCTION batch_increment_centralized_stock(p_product_ids jsonb, p_quantities jsonb)
+RETURNS json LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE v_results jsonb := '[]'::jsonb; v_pid text; v_qty numeric; v_new_stock numeric; v_idx integer;
 BEGIN
   IF jsonb_array_length(p_product_ids) != jsonb_array_length(p_quantities) THEN
     RAISE EXCEPTION 'product_ids and quantities arrays must have the same length'; END IF;
   FOR v_idx IN 0 .. jsonb_array_length(p_product_ids) - 1 LOOP
     v_pid := p_product_ids->>v_idx; v_qty := (p_quantities->>v_idx)::numeric;
-    SELECT global_stock INTO v_new_stock FROM products WHERE id = v_pid;
-    IF v_new_stock IS NULL THEN RAISE EXCEPTION 'Produk tidak ditemukan: %', v_pid; END IF;
-    IF v_new_stock < v_qty THEN RAISE EXCEPTION 'Stok tidak cukup untuk produk %. Tersedia: %, Dibutuhkan: %', v_pid, v_new_stock, v_qty; END IF;
-  END LOOP;
-  FOR v_idx IN 0 .. jsonb_array_length(p_product_ids) - 1 LOOP
-    v_pid := p_product_ids->>v_idx; v_qty := (p_quantities->>v_idx)::numeric;
-    UPDATE products SET global_stock = global_stock - v_qty WHERE id = v_pid RETURNING global_stock INTO v_new_stock;
+    UPDATE products SET global_stock = global_stock + v_qty
+    WHERE id = v_pid
+    RETURNING global_stock INTO v_new_stock;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Produk tidak ditemukan: %', v_pid;
+    END IF;
     v_results := v_results || jsonb_build_object('product_id', v_pid, 'new_stock', v_new_stock);
   END LOOP;
   RETURN v_results;
@@ -835,6 +863,92 @@ BEGIN
   END LOOP;
 END;
 $$;`,
+  },
+  // === CHECK Constraints — Data integrity guards ===
+  // Each wrapped in DO $$ with exception handling so re-running is idempotent
+  {
+    name: 'ck_products_selling_price_non_negative',
+    sql: `DO $$ BEGIN
+  ALTER TABLE products ADD CONSTRAINT products_selling_price_non_negative CHECK (selling_price >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
+  },
+  {
+    name: 'ck_products_purchase_price_non_negative',
+    sql: `DO $$ BEGIN
+  ALTER TABLE products ADD CONSTRAINT products_purchase_price_non_negative CHECK (purchase_price >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
+  },
+  {
+    name: 'ck_products_avg_hpp_non_negative',
+    sql: `DO $$ BEGIN
+  ALTER TABLE products ADD CONSTRAINT products_avg_hpp_non_negative CHECK (avg_hpp >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
+  },
+  {
+    name: 'ck_products_global_stock_non_negative',
+    sql: `DO $$ BEGIN
+  ALTER TABLE products ADD CONSTRAINT products_global_stock_non_negative CHECK (global_stock >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
+  },
+  {
+    name: 'ck_products_conversion_rate_positive',
+    sql: `DO $$ BEGIN
+  ALTER TABLE products ADD CONSTRAINT products_conversion_rate_positive CHECK (conversion_rate > 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
+  },
+  {
+    name: 'ck_transaction_items_qty_positive',
+    sql: `DO $$ BEGIN
+  ALTER TABLE transaction_items ADD CONSTRAINT transaction_items_qty_positive CHECK (qty > 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
+  },
+  {
+    name: 'ck_transaction_items_price_non_negative',
+    sql: `DO $$ BEGIN
+  ALTER TABLE transaction_items ADD CONSTRAINT transaction_items_price_non_negative CHECK (price >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
+  },
+  {
+    name: 'ck_transactions_total_non_negative',
+    sql: `DO $$ BEGIN
+  ALTER TABLE transactions ADD CONSTRAINT transactions_total_non_negative CHECK (total >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
+  },
+  {
+    name: 'ck_transactions_paid_non_negative',
+    sql: `DO $$ BEGIN
+  ALTER TABLE transactions ADD CONSTRAINT transactions_paid_non_negative CHECK (paid_amount >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
+  },
+  {
+    name: 'ck_finance_requests_amount_positive',
+    sql: `DO $$ BEGIN
+  ALTER TABLE finance_requests ADD CONSTRAINT finance_requests_amount_positive CHECK (amount > 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
+  },
+  {
+    name: 'ck_bank_accounts_balance_non_negative',
+    sql: `DO $$ BEGIN
+  ALTER TABLE bank_accounts ADD CONSTRAINT bank_accounts_balance_non_negative CHECK (balance >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
+  },
+  {
+    name: 'ck_cash_boxes_balance_non_negative',
+    sql: `DO $$ BEGIN
+  ALTER TABLE cash_boxes ADD CONSTRAINT cash_boxes_balance_non_negative CHECK (balance >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;`,
   },
 ];
 

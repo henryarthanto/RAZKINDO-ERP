@@ -70,6 +70,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 
 
 import PiutangTab from './PiutangTab';
@@ -189,6 +190,30 @@ const CASHFLOW_CATEGORY_COLORS: Record<string, string> = {
   cashback_withdrawal: 'bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300',
   pool_deposit: 'bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300',
 };
+
+// ================================
+// FINANCE DASHBOARD SKELETON
+// ================================
+function FinanceDashboardSkeleton() {
+  return (
+    <div className="space-y-4 safe-bottom w-full min-w-0 overflow-x-hidden">
+      {/* Summary cards skeleton */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="p-4 space-y-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-3 w-20" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      {/* Chart / Pool area skeleton */}
+      <Skeleton className="h-64 w-full rounded-xl" />
+    </div>
+  );
+}
 
 // ================================
 // FINANCE MODULE (MAIN)
@@ -376,6 +401,9 @@ export default function FinanceModule() {
       isHealthy,
     };
   }, [cashBoxes, bankAccounts, courierCashSummary, poolBalancesData]);
+  
+  // Show skeleton during initial data load
+  const isInitialLoading = !poolBalancesData && !bankAccountsData;
   
   // Separate requests by status
   const pendingRequests = financeRequests.filter((r: FinanceRequest) => r.status === 'pending');
@@ -697,6 +725,8 @@ export default function FinanceModule() {
   });
 
   // getRequestTypeLabel and getRequestTypeColor are defined outside the component
+
+  if (isInitialLoading) return <FinanceDashboardSkeleton />;
 
   return (
     <div className="space-y-4 safe-bottom w-full min-w-0 overflow-x-hidden">

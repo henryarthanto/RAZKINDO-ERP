@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { QueryProvider, POLLING_CONFIG, MODULE_POLLING } from '@/providers/query-provider';
 import { useAuthStore } from '@/stores/auth-store';
 import { useUnitStore } from '@/stores/unit-store';
@@ -8,6 +8,7 @@ import { useUIStore } from '@/stores/ui-store';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiFetch } from '@/lib/api-client';
 import { useDynamicFavicon } from '@/hooks/use-dynamic-favicon';
+import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { useRealtimeSync } from '@/hooks/use-realtime-sync';
 import { disconnectWebSocket } from '@/hooks/use-websocket';
 import { cn } from '@/lib/utils';
@@ -79,6 +80,7 @@ import CashbackManagementModule from '@/components/erp/CashbackManagementModule'
 import PWAOrdersModule from '@/components/erp/PWAOrdersModule';
 import { ChangePasswordDialog } from '@/components/erp/ChangePasswordDialog';
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
+import { KeyboardShortcutsDialog } from '@/components/erp/KeyboardShortcutsDialog';
 
 // ============== MOBILE BOTTOM NAV ==============
 function MobileBottomNav({
@@ -252,6 +254,7 @@ function MainApp() {
   const { sidebarOpen, setSidebarOpen } = useUIStore();
   const [activeModule, setActiveModule] = useState('dashboard');
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
   const queryClient = useQueryClient();
 
   // When unit is switched, invalidate all data queries so modules re-fetch
@@ -421,6 +424,85 @@ function MainApp() {
       }
     });
   };
+
+  // ============== KEYBOARD SHORTCUTS ==============
+  function handleEscape() {
+    if (showShortcutsDialog) {
+      setShowShortcutsDialog(false);
+    } else if (showChangePassword) {
+      setShowChangePassword(false);
+    } else if (sidebarOpen) {
+      setSidebarOpen(false);
+    }
+  }
+
+  const shortcuts = useMemo(() => {
+    const list = [
+      {
+        key: '?',
+        shift: true,
+        handler: () => setShowShortcutsDialog(true),
+        description: 'Tampilkan shortcut keyboard',
+      },
+      {
+        key: 'Escape',
+        handler: handleEscape,
+        description: 'Tutup dialog / sidebar',
+      },
+      {
+        key: 'n',
+        ctrl: true,
+        handler: () => handleNav('transaksi'),
+        description: 'Buat transaksi baru',
+      },
+      {
+        key: '/',
+        ctrl: true,
+        handler: () => {
+          // Focus search input if one exists
+          const searchInput = document.querySelector<HTMLInputElement>(
+            'input[placeholder*="Cari"], input[placeholder*="cari"], input[placeholder*="Search"], input[placeholder*="search"]'
+          );
+          searchInput?.focus();
+        },
+        description: 'Fokus ke pencarian',
+      },
+    ];
+
+    // Number keys 1-9 for quick module switch
+    for (let i = 0; i < Math.min(visibleModules.length, 9); i++) {
+      const m = visibleModules[i];
+      list.push({
+        key: String(i + 1),
+        handler: () => handleNav(m.id),
+        description: `Module ${m.label}`,
+      });
+    }
+
+    return list;
+  }, [visibleModules, handleNav, handleEscape]);
+
+  // Build display entries for the shortcuts dialog
+  const shortcutDisplayEntries = useMemo(() => {
+    const entries = [
+      { keys: '?', description: 'Tampilkan shortcut keyboard', group: 'Umum' },
+      { keys: 'Esc', description: 'Tutup dialog / sidebar', group: 'Umum' },
+      { keys: 'Ctrl + N', description: 'Buat transaksi baru', group: 'Umum' },
+      { keys: 'Ctrl + /', description: 'Fokus ke pencarian', group: 'Umum' },
+    ];
+
+    for (let i = 0; i < Math.min(visibleModules.length, 9); i++) {
+      entries.push({
+        keys: String(i + 1),
+        description: visibleModules[i].label,
+        group: 'Navigasi Module',
+      });
+    }
+
+    return entries;
+  }, [visibleModules]);
+
+  useKeyboardShortcuts(shortcuts);
 
   // Render active module
   const renderModule = () => {
@@ -749,6 +831,11 @@ function MainApp() {
       <ChangePasswordDialog
         open={showChangePassword}
         onOpenChange={setShowChangePassword}
+      />
+      <KeyboardShortcutsDialog
+        open={showShortcutsDialog}
+        onOpenChange={setShowShortcutsDialog}
+        shortcuts={shortcutDisplayEntries}
       />
       <PWAInstallPrompt />
     </div>

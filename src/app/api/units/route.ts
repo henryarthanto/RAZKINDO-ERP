@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/lib/supabase';
 import { rowsToCamelCase, toCamelCase, createLog, generateId } from '@/lib/supabase-helpers';
 import { verifyAuthUser } from '@/lib/token';
+import { validateBody } from '@/lib/validators';
+
+const unitCreateSchema = z.object({
+  name: z.string().min(1, 'Nama unit wajib diisi'),
+  address: z.string().optional(),
+  phone: z.string().optional(),
+});
 
 export async function GET(request: NextRequest) {
   try {
@@ -47,14 +55,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Hanya Super Admin yang dapat menambahkan unit/cabang' }, { status: 403 });
     }
 
-    const { name, address, phone } = await request.json();
-
-    if (!name) {
-      return NextResponse.json(
-        { error: 'Nama unit wajib diisi' },
-        { status: 400 }
-      );
+    const rawBody = await request.json();
+    const validation = validateBody(unitCreateSchema, rawBody);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
+    const { name, address, phone } = validation.data;
 
     const { data: unit } = await db
       .from('units')

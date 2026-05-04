@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Search, X, Plus, Minus, ShoppingCart, UserCircle, ChevronRight,
   Wallet, FileText, Calendar, Truck, StickyNote, Package, Check, Trash2,
-  Clock, Users, Send, AlertCircle, AlertOctagon, Pencil
+  Clock, Users, Send, AlertCircle, AlertOctagon, Pencil, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,13 +53,14 @@ interface SaleFormProps {
 }
 
 // ============ CART ITEM COMPONENT ============
-function CartItemCard({ item, index, updateQty, updateCartItemPrice, changeCartItemUnit, removeFromCart }: {
+function CartItemCard({ item, index, updateQty, updateCartItemPrice, changeCartItemUnit, removeFromCart, isRecentlyAdded }: {
   item: CartItem;
   index: number;
   updateQty: (index: number, delta: number) => void;
   updateCartItemPrice: (index: number, newPrice: number) => void;
   changeCartItemUnit: (index: number, newType: 'main' | 'sub') => void;
   removeFromCart: (index: number) => void;
+  isRecentlyAdded?: boolean;
 }) {
   const [editingPrice, setEditingPrice] = useState(false);
   const [tempPrice, setTempPrice] = useState('');
@@ -73,8 +74,13 @@ function CartItemCard({ item, index, updateQty, updateCartItemPrice, changeCartI
   const unitLabel = item.qtyUnitType === 'main' ? item.mainUnit : item.subUnit;
   const hasImage = !!item.productImageUrl;
 
+  // Stock reservation feedback: compute remaining stock after this cart item
+  const qtyInSub = item.qtyUnitType === 'main' ? item.qty * item.conversionRate : item.qty;
+  const remainingStock = item.trackStock ? item.globalStock - qtyInSub : Infinity;
+  const isStockLow = remainingStock >= 0 && remainingStock <= Math.max(5, item.globalStock * 0.2);
+
   return (
-    <div className="border rounded-2xl p-3 bg-card space-y-2.5">
+    <div className={cn("border rounded-2xl p-3 bg-card space-y-2.5 transition-all duration-500", isRecentlyAdded && "ring-2 ring-primary/20 bg-primary/[0.02]")}>
       <div className="flex items-start gap-3">
         {/* Product thumbnail */}
         <div className="relative w-12 h-12 rounded-xl bg-muted/40 shrink-0 overflow-hidden">
@@ -141,6 +147,13 @@ function CartItemCard({ item, index, updateQty, updateCartItemPrice, changeCartI
         </div>
         <p className="font-bold text-base tabular-nums">{formatCurrency(item.qty * item.price)}</p>
       </div>
+      {/* Stock reservation warning */}
+      {isStockLow && (
+        <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
+          <AlertCircle className="w-3 h-3 shrink-0" />
+          Stok tersisa: {remainingStock}
+        </p>
+      )}
     </div>
   );
 }
@@ -176,6 +189,9 @@ export function SaleForm({
   const paidAmountManuallyEdited = useRef(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [recentlyAddedIds, setRecentlyAddedIds] = useState<Set<string>>(new Set());
+  const pendingRemovalRef = useRef<{ item: CartItem; index: number; timeoutId: ReturnType<typeof setTimeout> } | null>(null);
+  const cartSnapshotRef = useRef<CartItem[]>([]);
 
   // ============ DERIVED ============
 
@@ -246,7 +262,8 @@ export function SaleForm({
   // ============ CLOSE HANDLER ============
   const handleClose = useCallback((open: boolean) => {
     if (!open) {
-      if (cart.length > 0) {
+      if (loading) return; // Don't close while submitting
+      if (cart.length > 0 || cartSnapshotRef.current.length > 0) {
         if (window.confirm('Yakin ingin keluar? Data yang belum disimpan akan hilang.')) {
           setIsClosing(true);
           onClose();
@@ -256,7 +273,7 @@ export function SaleForm({
         onClose();
       }
     }
-  }, [cart.length, onClose]);
+  }, [cart.length, onClose, loading]);
 
   // ============ CART ACTIONS ============
   const addToCart = useCallback((product: Product) => {
@@ -292,6 +309,10 @@ export function SaleForm({
       toast.error(stockError);
     } else {
       toast.success(`${product.name} ditambahkan`);
+      // Track briefly as "recently added" for optimistic animation
+      const newId = product.id;
+      setRecentlyAddedIds(prev => { const next = new Set(prev); next.add(newId); return next; });
+      setTimeout(() => { setRecentlyAddedIds(prev => { const next = new Set(prev); next.delete(newId); return next; }); }, 600);
     }
   }, []);
 
@@ -312,7 +333,42 @@ export function SaleForm({
     }
   };
 
-  const removeFromCart = (index: number) => setCart(prev => prev.filter((_, i) => i !== index));
+  const removeFromCart = (index: number) => {
+    let removedItem: CartItem | undefined;
+    setCart(prev => {
+      const item = prev[index];
+      if (!item) return prev;
+      removedItem = item;
+      return prev.filter((_, i) => i !== index);
+    });
+    if (!removedItem) return;
+
+    // Clear any previous pending removal
+    if (pendingRemovalRef.current) {
+      clearTimeout(pendingRemovalRef.current.timeoutId);
+    }
+
+    // Store removed item for potential undo (5-second window)
+    const removedIndex = index;
+    const timeoutId = setTimeout(() => { pendingRemovalRef.current = null; }, 5000);
+    pendingRemovalRef.current = { item: removedItem, index: removedIndex, timeoutId };
+
+    // Show undo toast
+    toast(`${removedItem.productName} dihapus.`, {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          if (pendingRemovalRef.current) {
+            clearTimeout(pendingRemovalRef.current.timeoutId);
+            const { item: undoItem, index: undoIndex } = pendingRemovalRef.current;
+            setCart(c => { const copy = [...c]; copy.splice(undoIndex, 0, undoItem); return copy; });
+            pendingRemovalRef.current = null;
+          }
+        },
+      },
+      duration: 5000,
+    });
+  };
   const clearCart = () => setCart([]);
   const updateCartItemPrice = (index: number, newPrice: number) => { if (isNaN(newPrice) || newPrice < 0) return; setCart(prev => prev.map((item, i) => i !== index ? item : { ...item, price: newPrice })); };
   const changeCartItemUnit = (index: number, newType: 'main' | 'sub') => {
@@ -364,16 +420,22 @@ export function SaleForm({
     if (!posUnitId) { toast.error('Unit tidak ditemukan'); return; }
     if (cart.length === 0) { toast.error('Tambahkan produk terlebih dahulu'); return; }
     if ((paymentMethod === 'tempo' || paymentMethod === 'piutang') && !dueDate) { toast.error('Jatuh tempo wajib diisi untuk pembayaran tempo'); return; }
+
+    // Optimistic: snapshot cart and clear immediately for instant feedback
+    const cartSnapshot = [...cart];
+    cartSnapshotRef.current = cartSnapshot;
+    setCart([]);
     setLoading(true);
+
     try {
-      // Build payload once (immutable across retries)
+      // Build payload from snapshot (cart state is now empty)
       const payload = JSON.stringify({
         type: 'sale', unitId: posUnitId, createdById: userId,
         customerId: selectedCustomer?.id || '', courierId: courierId === 'none' ? '' : courierId,
         paymentMethod, paidAmount,
         dueDate: paymentMethod === 'tempo' ? dueDate : (paymentMethod === 'piutang' ? dueDate : ''),
         transactionDate, deliveryAddress: selectedCustomer?.address || '', notes,
-        items: cart.map(i => {
+        items: cartSnapshot.map(i => {
           const qtyInSubUnit = i.qtyUnitType === 'main' ? i.qty * i.conversionRate : i.qty;
           const hppPerItem = (Number(i.hpp) || 0) * qtyInSubUnit;
           return { productId: i.productId, productName: i.productName, qty: i.qty, qtyInSubUnit, qtyUnitType: i.qtyUnitType, price: i.price, hpp: i.hpp, subtotal: i.qty * i.price, profit: (i.qty * i.price) - hppPerItem, totalHpp: hppPerItem };
@@ -381,7 +443,7 @@ export function SaleForm({
       });
 
       // Generate idempotency key so retries don't create duplicate transactions
-      const idempotencyKey = `sale-${posUnitId}-${cart.map(i => i.productId).join(',')}-${Date.now()}`;
+      const idempotencyKey = `sale-${posUnitId}-${cartSnapshot.map(i => i.productId).join(',')}-${Date.now()}`;
 
       // Retry up to 2 times on 502/503/504 (gateway/overload errors)
       const MAX_RETRIES = 2;
@@ -395,12 +457,16 @@ export function SaleForm({
             body: payload,
           });
           toast.success('Transaksi berhasil dibuat!');
+          cartSnapshotRef.current = [];
           setCreatedTransaction(data.transaction);
           return; // Success — exit retry loop
         } catch (err: any) {
           const isRetryable = err.status >= 502 && err.status <= 504;
           const isLastAttempt = attempt >= MAX_RETRIES;
           if (!isRetryable || isLastAttempt) {
+            // Rollback: restore cart from snapshot
+            setCart(cartSnapshot);
+            cartSnapshotRef.current = [];
             toast.error(err.message || 'Gagal membuat transaksi');
             return; // Non-retryable or exhausted retries
           }
@@ -408,6 +474,11 @@ export function SaleForm({
           await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt] || 2000));
         }
       }
+    } catch (err: any) {
+      // Unexpected error — rollback cart
+      setCart(cartSnapshotRef.current);
+      cartSnapshotRef.current = [];
+      toast.error(err.message || 'Gagal membuat transaksi');
     } finally { setLoading(false); }
   };
 
@@ -739,11 +810,19 @@ export function SaleForm({
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
         <div className="p-3 space-y-2">
           {cart.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <ShoppingCart className="w-10 h-10 mb-3 opacity-30" /><p className="text-sm">Keranjang kosong</p>
-            </div>
+            loading && cartSnapshotRef.current.length > 0 ? (
+              /* Optimistic submit: show saving state instead of empty cart */
+              <div className="flex flex-col items-center justify-center py-16">
+                <Loader2 className="w-8 h-8 text-primary animate-spin mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">Menyimpan transaksi...</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                <ShoppingCart className="w-10 h-10 mb-3 opacity-30" /><p className="text-sm">Keranjang kosong</p>
+              </div>
+            )
           ) : cart.map((item, i) => (
-            <CartItemCard key={`${item.productId}-${i}`} item={item} index={i} updateQty={updateQty} updateCartItemPrice={updateCartItemPrice} changeCartItemUnit={changeCartItemUnit} removeFromCart={removeFromCart} />
+            <CartItemCard key={`${item.productId}-${i}`} item={item} index={i} updateQty={updateQty} updateCartItemPrice={updateCartItemPrice} changeCartItemUnit={changeCartItemUnit} removeFromCart={removeFromCart} isRecentlyAdded={recentlyAddedIds.has(item.productId)} />
           ))}
         </div>
       </div>
@@ -793,7 +872,7 @@ export function SaleForm({
             )}
             <Button className="w-full h-12 text-sm font-bold rounded-2xl gap-2 shadow-lg active:scale-[0.98] transition-transform"
               onClick={handleSubmit} disabled={loading || cart.length === 0}>
-              {loading ? <span className="animate-pulse">Memproses...</span> : (
+              {loading ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Menyimpan...</span> : (
                 <><Check className="w-4 h-4" />{paymentMethod === 'cash' ? `Bayar ${formatCurrency(total)}` : `Buat Faktur ${formatCurrency(total)}`}</>
               )}
             </Button>

@@ -1,9 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/lib/supabase';
 import { verifyAuthUser } from '@/lib/token';
 import { enforceFinanceRole } from '@/lib/require-auth';
 import { rowsToCamelCase, toSnakeCase, createLog, toCamelCase, generateId } from '@/lib/supabase-helpers';
 import { wsFinanceUpdate } from '@/lib/ws-dispatch';
+import { validateBody } from '@/lib/validators';
+
+const transferCreateSchema = z.object({
+  type: z.enum(['cash_to_bank', 'bank_to_cash', 'bank_to_bank', 'cash_to_cash'], {
+    error: 'Tipe transfer tidak valid',
+  }),
+  amount: z.number().positive('Jumlah transfer harus lebih dari 0'),
+  description: z.string().optional(),
+  referenceNo: z.string().optional(),
+  fromBankAccountId: z.string().nullable().optional(),
+  toBankAccountId: z.string().nullable().optional(),
+  fromCashBoxId: z.string().nullable().optional(),
+  toCashBoxId: z.string().nullable().optional(),
+});
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,18 +47,12 @@ export async function POST(request: NextRequest) {
     const authResult = await enforceFinanceRole(request);
     if (!authResult.success) return authResult.response;
 
-    const data = await request.json();
-
-    if (!data.type) {
-      return NextResponse.json({ error: 'Tipe transfer wajib diisi' }, { status: 400 });
+    const rawBody = await request.json();
+    const validation = validateBody(transferCreateSchema, rawBody);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-    const VALID_TYPES = ['cash_to_bank', 'bank_to_cash', 'bank_to_bank', 'cash_to_cash'];
-    if (!VALID_TYPES.includes(data.type)) {
-      return NextResponse.json({ error: 'Tipe transfer tidak valid' }, { status: 400 });
-    }
-    if (!data.amount || data.amount <= 0) {
-      return NextResponse.json({ error: 'Jumlah transfer harus lebih dari 0' }, { status: 400 });
-    }
+    const data = validation.data;
 
     let fromBankAccountId: string | null = null;
     let toBankAccountId: string | null = null;

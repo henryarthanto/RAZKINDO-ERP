@@ -31,10 +31,10 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem
 } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription,
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription,
   DrawerFooter, DrawerClose,
 } from '@/components/ui/drawer';
+import { Skeleton } from '@/components/ui/skeleton';
 
 // Customer Form Component
 function CustomerForm({ unitId, units, onSuccess, customer, salesUserId }: {
@@ -388,7 +388,35 @@ export default function CustomersModule() {
   });
   
   if (isLoading) {
-    return <LoadingFallback message="Memuat pelanggan..." />;
+    return (
+      <div className="space-y-4 overflow-x-hidden">
+        {/* Skeleton search bar */}
+        <div className="flex gap-3">
+          <Skeleton className="h-10 flex-1 rounded-md" />
+          <Skeleton className="h-10 w-40 rounded-md" />
+        </div>
+        {/* Skeleton customer cards */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 px-2 sm:px-0">
+          {Array.from({ length: 9 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-3 sm:p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-5 w-32" />
+                  <Skeleton className="h-5 w-14 rounded-full" />
+                </div>
+                <Skeleton className="h-4 w-36" />
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-3 w-full" />
+                <div className="flex justify-between">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-28" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
   }
   
   return (

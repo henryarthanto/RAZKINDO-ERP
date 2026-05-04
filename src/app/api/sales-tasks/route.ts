@@ -1,9 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/lib/supabase';
 import { verifyAuthUser } from '@/lib/token';
 import { enforceSuperAdmin } from '@/lib/require-auth';
 import { rowsToCamelCase, toCamelCase, toSnakeCase, createEvent, generateId } from '@/lib/supabase-helpers';
 import { wsTaskUpdate } from '@/lib/ws-dispatch';
+import { validateBody } from '@/lib/validators';
+
+const salesTaskCreateSchema = z.object({
+  title: z.string().min(1, 'Judul tugas wajib diisi'),
+  assignedToId: z.string().min(1, 'Sales yang ditugaskan wajib diisi'),
+  description: z.string().optional(),
+  type: z.enum(['general', 'visit', 'followup', 'prospecting', 'collection', 'other']).optional(),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+  dueDate: z.string().optional(),
+});
 
 export async function GET(request: NextRequest) {
   try {
@@ -77,17 +88,12 @@ export async function POST(request: NextRequest) {
     const authResult = await enforceSuperAdmin(request);
     if (!authResult.success) return NextResponse.json({ error: 'Akses ditolak' }, { status: authResult.response.status });
 
-    const data = await request.json();
-    const { title, description, type, priority, assignedToId, dueDate } = data;
-
-    if (!title?.trim()) return NextResponse.json({ error: 'Judul tugas wajib diisi' }, { status: 400 });
-    if (!assignedToId) return NextResponse.json({ error: 'Sales yang ditugaskan wajib diisi' }, { status: 400 });
-
-    const validTypes = ['general', 'visit', 'followup', 'prospecting', 'collection', 'other'];
-    if (type && !validTypes.includes(type)) return NextResponse.json({ error: `Tipe tugas harus salah satu dari: ${validTypes.join(', ')}` }, { status: 400 });
-
-    const validPriorities = ['low', 'normal', 'high', 'urgent'];
-    if (priority && !validPriorities.includes(priority)) return NextResponse.json({ error: `Prioritas harus salah satu dari: ${validPriorities.join(', ')}` }, { status: 400 });
+    const rawBody = await request.json();
+    const validation = validateBody(salesTaskCreateSchema, rawBody);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    const { title, description, type, priority, assignedToId, dueDate } = validation.data;
 
     const { data: assignedUser } = await db.from('users').select('id, role, status, is_active').eq('id', assignedToId).single();
     if (!assignedUser) return NextResponse.json({ error: 'User tidak ditemukan' }, { status: 404 });

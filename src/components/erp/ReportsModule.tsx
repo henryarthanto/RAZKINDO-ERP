@@ -18,6 +18,7 @@ import {
   Table, TableHeader, TableRow, TableHead, TableBody, TableCell
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency, formatDate, formatStock, monthStartLocal, todayLocal } from '@/lib/erp-helpers';
 
 export default function ReportsModule() {
@@ -102,6 +103,23 @@ export default function ReportsModule() {
         </CardContent>
       </Card>
       
+      {isLoading && (
+        <Card>
+          <CardContent className="p-6 space-y-4">
+            <Skeleton className="h-6 w-48" />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="p-3 bg-muted rounded-lg space-y-2">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-6 w-28" />
+                </div>
+              ))}
+            </div>
+            <Skeleton className="h-64 w-full rounded-lg" />
+          </CardContent>
+        </Card>
+      )}
+
       {report && (
         <Card>
           <CardHeader>

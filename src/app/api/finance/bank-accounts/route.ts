@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/lib/supabase';
 import { verifyAuthUser } from '@/lib/token';
 import { enforceFinanceRole } from '@/lib/require-auth';
 import { toCamelCase, rowsToCamelCase, toSnakeCase, createLog, generateId } from '@/lib/supabase-helpers';
+import { validateBody } from '@/lib/validators';
+
+const bankAccountCreateSchema = z.object({
+  name: z.string().min(1, 'Nama wajib diisi'),
+  bankName: z.string().min(1, 'Nama bank wajib diisi'),
+  accountNo: z.string().min(1, 'Nomor rekening wajib diisi'),
+  accountHolder: z.string().min(1, 'Pemilik rekening wajib diisi'),
+  branch: z.string().optional(),
+  balance: z.number().min(0).optional(),
+  notes: z.string().optional(),
+});
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,14 +40,12 @@ export async function POST(request: NextRequest) {
     const authResult = await enforceFinanceRole(request);
     if (!authResult.success) return authResult.response;
 
-    const data = await request.json();
-
-    if (!data.name || !data.bankName || !data.accountNo || !data.accountHolder) {
-      return NextResponse.json(
-        { error: 'Nama, bank, nomor rekening, dan pemilik rekening wajib diisi' },
-        { status: 400 }
-      );
+    const rawBody = await request.json();
+    const validation = validateBody(bankAccountCreateSchema, rawBody);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
+    const data = validation.data;
 
     const now = new Date().toISOString();
     const insertData = toSnakeCase({

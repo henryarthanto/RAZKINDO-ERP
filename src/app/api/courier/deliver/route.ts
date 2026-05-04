@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/lib/supabase';
 import { verifyAuthUser } from '@/lib/token';
 import { toCamelCase, toSnakeCase, createLog, createEvent, generateId } from '@/lib/supabase-helpers';
 import { wsDeliveryUpdate } from '@/lib/ws-dispatch';
 import { atomicUpdatePoolBalance } from '@/lib/atomic-ops';
+import { validateBody } from '@/lib/validators';
+
+const courierDeliverSchema = z.object({
+  transactionId: z.string().min(1, 'transactionId diperlukan'),
+  courierId: z.string().min(1, 'courierId diperlukan'),
+  paymentMethod: z.enum(['cash', 'transfer', 'giro', 'piutang', 'tempo']).optional(),
+  amount: z.number().positive('Jumlah pembayaran harus berupa angka positif').optional(),
+  referenceNo: z.string().optional(),
+});
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
@@ -14,19 +24,17 @@ export async function PATCH(request: NextRequest) {
     const authUserId = await verifyAuthUser(request.headers.get('authorization'));
     if (!authUserId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const data = await request.json();
-    const { transactionId, courierId, paymentMethod, amount, referenceNo } = data;
-
-    if (!transactionId || !courierId) return NextResponse.json({ error: 'transactionId dan courierId diperlukan' }, { status: 400 });
+    const rawBody = await request.json();
+    const validation = validateBody(courierDeliverSchema, rawBody);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    const { transactionId, courierId, paymentMethod, amount, referenceNo } = validation.data;
 
     const { data: authUser } = await db.from('users').select('role, is_active, status').eq('id', authUserId).single();
     if (!authUser || !authUser.is_active || authUser.status !== 'approved') return NextResponse.json({ error: 'Akses ditolak' }, { status: 403 });
     if (authUser.role !== 'kurir' && authUser.role !== 'super_admin') return NextResponse.json({ error: 'Hanya kurir atau Super Admin yang dapat menyelesaikan pengiriman' }, { status: 403 });
     if (authUser.role === 'kurir' && authUserId !== courierId) return NextResponse.json({ error: 'Kurir hanya bisa menyelesaikan pengiriman miliknya sendiri' }, { status: 403 });
-
-    const VALID_METHODS = ['cash', 'transfer', 'giro', 'piutang', 'tempo'];
-    if (paymentMethod && !VALID_METHODS.includes(paymentMethod)) return NextResponse.json({ error: 'Metode pembayaran tidak valid' }, { status: 400 });
-    if (paymentMethod && (typeof amount !== 'number' || amount <= 0)) return NextResponse.json({ error: 'Jumlah pembayaran harus berupa angka positif' }, { status: 400 });
 
     // Get transaction
     const { data: transaction, error: txError } = await db.from('transactions').select(`
@@ -150,7 +158,7 @@ export async function PATCH(request: NextRequest) {
         .update(paymentUpdateData)
         .eq('id', transactionId)
         .neq('payment_status', 'paid')
-        .eq('paid_amount', updateData.paid_amount - data.amount); // FIX: Additional optimistic lock — prevent concurrent double-credit
+        .eq('paid_amount', updateData.paid_amount - amount); // FIX: Additional optimistic lock — prevent concurrent double-credit
       if (payUpdateError) throw payUpdateError;
     }
 

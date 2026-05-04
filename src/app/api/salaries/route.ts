@@ -1,7 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/lib/supabase';
 import { rowsToCamelCase, toSnakeCase, createLog, createEvent, toCamelCase, generateId } from '@/lib/supabase-helpers';
 import { enforceFinanceRole } from '@/lib/require-auth';
+import { validateBody } from '@/lib/validators';
+
+const salaryCreateSchema = z.object({
+  userId: z.string().min(1, 'ID karyawan wajib diisi'),
+  baseSalary: z.number().positive('Gaji pokok harus lebih dari 0'),
+  periodStart: z.string().min(1, 'Periode mulai wajib diisi'),
+  periodEnd: z.string().min(1, 'Periode selesai wajib diisi'),
+  unitId: z.string().optional(),
+  notes: z.string().optional(),
+  transportAllowance: z.number().min(0).optional(),
+  mealAllowance: z.number().min(0).optional(),
+  overtimePay: z.number().min(0).optional(),
+  incentive: z.number().min(0).optional(),
+  otherAllowance: z.number().min(0).optional(),
+  bonus: z.number().min(0).optional(),
+  bpjsTk: z.number().min(0).optional(),
+  bpjsKs: z.number().min(0).optional(),
+  pph21: z.number().min(0).optional(),
+  loanDeduction: z.number().min(0).optional(),
+  absenceDeduction: z.number().min(0).optional(),
+  lateDeduction: z.number().min(0).optional(),
+  otherDeduction: z.number().min(0).optional(),
+  deduction: z.number().min(0).optional(),
+});
 
 export async function GET(request: NextRequest) {
   try {
@@ -52,11 +77,12 @@ export async function POST(request: NextRequest) {
     if (!authResult.success) return authResult.response;
     const { userId: authUserId } = authResult;
 
-    const data = await request.json();
-
-    if (!data.userId) return NextResponse.json({ error: 'ID karyawan wajib diisi' }, { status: 400 });
-    if (!data.baseSalary || data.baseSalary <= 0) return NextResponse.json({ error: 'Gaji pokok harus lebih dari 0' }, { status: 400 });
-    if (!data.periodStart || !data.periodEnd) return NextResponse.json({ error: 'Periode gaji wajib diisi' }, { status: 400 });
+    const rawBody = await request.json();
+    const validation = validateBody(salaryCreateSchema, rawBody);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    const data = validation.data;
 
     const totalAllowance = (data.transportAllowance || 0) + (data.mealAllowance || 0) + (data.overtimePay || 0) + (data.incentive || 0) + (data.otherAllowance || 0) + (data.bonus || 0);
     const totalDeduction = (data.bpjsTk || 0) + (data.bpjsKs || 0) + (data.pph21 || 0) + (data.loanDeduction || 0) + (data.absenceDeduction || 0) + (data.lateDeduction || 0) + (data.otherDeduction || 0) + (data.deduction || 0);

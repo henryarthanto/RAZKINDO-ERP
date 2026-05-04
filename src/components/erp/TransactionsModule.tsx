@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -449,6 +450,42 @@ function PWAOrderApprovalDialog({
   );
 }
 
+// ============== TRANSACTIONS TABLE SKELETON ==============
+function TransactionsTableSkeleton() {
+  return (
+    <div className="space-y-4">
+      {/* Skeleton filter bar */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex gap-3">
+            <Skeleton className="h-10 w-32 rounded-md" />
+            <Skeleton className="h-10 w-40 rounded-md" />
+            <div className="flex-1" />
+            <Skeleton className="h-10 w-36 rounded-md" />
+          </div>
+        </CardContent>
+      </Card>
+      {/* Skeleton table rows */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="space-y-3 p-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-6 w-20 rounded-full" />
+                <Skeleton className="h-8 w-24" />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ============== TRANSACTIONS MODULE ==============
 export default function TransactionsModule() {
   const { user } = useAuthStore();
@@ -580,10 +617,10 @@ export default function TransactionsModule() {
     queryClient.invalidateQueries({ queryKey: ['customers-lost'] });
   };
 
+  if (isLoading) return <TransactionsTableSkeleton />;
+
   return (
     <div className="space-y-4">
-      {isLoading && <LoadingFallback message="Memuat data transaksi..." />}
-
       {/* Filters + Create Button */}
       <Card>
         <CardContent className="p-2 sm:p-4">

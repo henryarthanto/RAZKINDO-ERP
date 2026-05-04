@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/lib/supabase';
 import { verifyAuthUser } from '@/lib/token';
 import { enforceFinanceRole } from '@/lib/require-auth';
 import { toCamelCase, rowsToCamelCase, toSnakeCase, createLog, generateId } from '@/lib/supabase-helpers';
+import { validateBody } from '@/lib/validators';
+
+const cashBoxCreateSchema = z.object({
+  name: z.string().min(1, 'Nama brankas/kas wajib diisi'),
+  unitId: z.string().nullable().optional(),
+  balance: z.number().min(0).optional(),
+  notes: z.string().nullable().optional(),
+});
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,14 +37,12 @@ export async function POST(request: NextRequest) {
     const authResult = await enforceFinanceRole(request);
     if (!authResult.success) return authResult.response;
 
-    const data = await request.json();
-
-    if (!data.name) {
-      return NextResponse.json(
-        { error: 'Nama brankas/kas wajib diisi' },
-        { status: 400 }
-      );
+    const rawBody = await request.json();
+    const validation = validateBody(cashBoxCreateSchema, rawBody);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
+    const data = validation.data;
 
     const now = new Date().toISOString();
     const insertData = toSnakeCase({
