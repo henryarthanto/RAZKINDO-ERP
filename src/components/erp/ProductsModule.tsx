@@ -854,6 +854,101 @@ function StockMovementTab({ products }: { products: any[] }) {
 }
 
 // ═══════════════════════════════════════════
+// INLINE STOCK UPDATE BUTTONS
+// ═══════════════════════════════════════════
+function InlineStockButtons({ product, isPerUnit, selectedUnitId, onAdjust }: {
+  product: any;
+  isPerUnit: boolean;
+  selectedUnitId: string | null;
+  onAdjust: (productId: string, qty: number, unitId?: string) => void;
+}) {
+  const [showInput, setShowInput] = useState(false);
+  const [inputVal, setInputVal] = useState('');
+
+  const getUnitId = () => {
+    if (isPerUnit && selectedUnitId) return selectedUnitId;
+    return undefined;
+  };
+
+  const handleQuickBtn = (delta: number) => {
+    onAdjust(product.id, delta, getUnitId());
+  };
+
+  const handleInputSubmit = () => {
+    const v = parseFloat(inputVal);
+    if (isNaN(v) || v === 0) return;
+    onAdjust(product.id, v, getUnitId());
+    setInputVal('');
+    setShowInput(false);
+  };
+
+  if (!product.trackStock && product.trackStock !== undefined) return null;
+
+  return (
+    <div className="flex items-center gap-0.5">
+      {showInput ? (
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            autoFocus
+            value={inputVal}
+            onChange={(e) => setInputVal(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleInputSubmit();
+              if (e.key === 'Escape') { setShowInput(false); setInputVal(''); }
+            }}
+            placeholder="0"
+            className="w-14 h-6 text-[11px] text-center border rounded px-1 bg-background"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleInputSubmit(); }}
+            className="h-6 w-6 flex items-center justify-center rounded bg-primary text-primary-foreground hover:bg-primary/90 shrink-0"
+          >
+            <span className="text-[10px] font-bold">✓</span>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowInput(false); setInputVal(''); }}
+            className="h-6 w-6 flex items-center justify-center rounded bg-muted hover:bg-muted/80 shrink-0"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleQuickBtn(-1); }}
+            className="h-6 w-6 flex items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/50 shrink-0 transition-colors"
+            title="Kurangi 1"
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleQuickBtn(1); }}
+            className="h-6 w-6 flex items-center justify-center rounded-md bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 shrink-0 transition-colors"
+            title="Tambah 1"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowInput(true); }}
+            className="h-6 w-6 flex items-center justify-center rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-950/30 dark:hover:bg-blue-950/50 shrink-0 transition-colors"
+            title="Input jumlah"
+          >
+            <Edit className="w-3 h-3" />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
 // MAIN PRODUCTS MODULE
 // ═══════════════════════════════════════════
 export default function ProductsModule() {
@@ -926,7 +1021,24 @@ export default function ProductsModule() {
       queryClient.invalidateQueries({ queryKey: ['products'] });
     }
   });
-  
+
+  // Quick inline stock adjustment mutation
+  const quickStockMutation = useMutation({
+    mutationFn: async ({ productId, qty, type, unitId }: { productId: string; qty: number; type: 'in' | 'out'; unitId?: string }) => {
+      return apiFetch(`/api/products/${productId}/stock`, {
+        method: 'POST',
+        body: JSON.stringify({ quantity: Math.abs(qty), type, unitId, stockUnitType: 'sub', reason: 'Penyesuaian cepat' }),
+      });
+    },
+    onSuccess: (_data, variables) => {
+      toast.success(`Stok berhasil ${variables.type === 'in' ? 'ditambah' : 'dikurangi'} (${variables.qty > 0 ? '+' : ''}${variables.qty})`);
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Gagal update stok');
+    },
+  });
+
   if (isLoading && !data) {
     return (
       <div className="space-y-4 w-full overflow-hidden">
@@ -1078,6 +1190,16 @@ export default function ProductsModule() {
                           <Badge variant={isLow ? "destructive" : (isTracking ? "secondary" : "outline")}>
                             {isTracking ? displayStockStr : 'Nonaktif'}
                           </Badge>
+                          {isTracking && user?.role === 'super_admin' && (
+                            <InlineStockButtons
+                              product={p as any}
+                              isPerUnit={isPerUnit}
+                              selectedUnitId={selectedUnitId}
+                              onAdjust={(productId, qty, unitId) => {
+                                quickStockMutation.mutate({ productId, qty, type: qty > 0 ? 'in' : 'out', unitId });
+                              }}
+                            />
+                          )}
                           {user?.role === 'super_admin' && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -1208,6 +1330,16 @@ export default function ProductsModule() {
                         <Badge variant={isLow ? "destructive" : (isTracking ? "secondary" : "outline")}>
                           {isTracking ? displayStockStr : 'Nonaktif'}
                         </Badge>
+                        {isTracking && user?.role === 'super_admin' && (
+                          <InlineStockButtons
+                            product={p}
+                            isPerUnit={isPerUnit}
+                            selectedUnitId={selectedUnitId}
+                            onAdjust={(productId, qty, unitId) => {
+                              quickStockMutation.mutate({ productId, qty, type: qty > 0 ? 'in' : 'out', unitId });
+                            }}
+                          />
+                        )}
                         {user?.role === 'super_admin' && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
