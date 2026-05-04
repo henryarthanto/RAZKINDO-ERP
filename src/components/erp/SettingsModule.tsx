@@ -13,7 +13,6 @@ import {
   MessageSquare,
   HardDrive,
   Database,
-  CreditCard,
   Rocket,
   Plus,
   Trash2,
@@ -49,7 +48,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { LoadingFallback } from '@/components/error-boundary';
 import WhatsAppSettingsTab from './WhatsAppSettingsTab';
-import TripaySettingsTab from './TripaySettingsTab';
 import SetupTab from './SetupTab';
 import StorageTab from './StorageTab';
 import { apiFetch } from '@/lib/api-client';
@@ -554,9 +552,6 @@ export default function SettingsModule() {
               <SelectItem value="storage">
                 <span className="inline-flex items-center gap-2"><Activity className="w-4 h-4" /><span>Monitor</span></span>
               </SelectItem>
-              <SelectItem value="integrasi">
-                <span className="inline-flex items-center gap-2"><CreditCard className="w-4 h-4" /><span>Integrasi</span></span>
-              </SelectItem>
               <SelectItem value="setup">
                 <span className="inline-flex items-center gap-2"><Rocket className="w-4 h-4" /><span>Setup</span></span>
               </SelectItem>
@@ -574,7 +569,6 @@ export default function SettingsModule() {
           <TabsTrigger value="printer" className="shrink-0 whitespace-nowrap text-xs sm:text-sm gap-1"><Printer className="w-3 h-3 sm:w-4 sm:h-4" />Printer</TabsTrigger>
           <TabsTrigger value="whatsapp" className="shrink-0 whitespace-nowrap text-xs sm:text-sm gap-1"><MessageSquare className="w-3 h-3 sm:w-4 sm:h-4" />WA</TabsTrigger>
           <TabsTrigger value="storage" className="shrink-0 whitespace-nowrap text-xs sm:text-sm gap-1"><Activity className="w-3 h-3 sm:w-4 sm:h-4" />Monitor</TabsTrigger>
-          <TabsTrigger value="integrasi" className="shrink-0 whitespace-nowrap text-xs sm:text-sm gap-1"><CreditCard className="w-3 h-3 sm:w-4 sm:h-4" />Integrasi</TabsTrigger>
           <TabsTrigger value="setup" className="shrink-0 whitespace-nowrap text-xs sm:text-sm gap-1"><Rocket className="w-3 h-3 sm:w-4 sm:h-4" />Setup</TabsTrigger>
           <TabsTrigger value="system" className="shrink-0 whitespace-nowrap text-xs sm:text-sm gap-1"><Database className="w-3 h-3 sm:w-4 sm:h-4" />Sistem</TabsTrigger>
         </TabsList>
@@ -973,11 +967,6 @@ Kembali                0
         {/* ===== TAB: STORAGE Z.AI ===== */}
         <TabsContent value="storage" className="space-y-4">
           <StorageTab queryClient={queryClient} />
-        </TabsContent>
-
-        {/* ===== TAB: INTEGRASI ===== */}
-        <TabsContent value="integrasi" className="space-y-4">
-          <TripaySettingsTab />
         </TabsContent>
 
         {/* ===== TAB: SETUP ===== */}

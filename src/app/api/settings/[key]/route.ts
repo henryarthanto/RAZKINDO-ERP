@@ -66,13 +66,6 @@ export async function PATCH(
         await cacheInvalidatePrefix('settings');
       } catch { /* cache optional */ }
     }
-    if (key === 'tripay_config') {
-      try {
-        const { invalidateTripayConfigCache } = await import('@/lib/qris-service');
-        invalidateTripayConfigCache();
-      } catch { /* cache optional */ }
-    }
-
     return NextResponse.json({ setting: toCamelCase(setting) });
   } catch (error: any) {
     console.error('[Settings] Update error for key:', settingKey, error?.message || error);

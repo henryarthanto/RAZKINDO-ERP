@@ -816,3 +816,26 @@ Stage Summary:
 - Commit: 24ef673 — pushed to GitHub, CI/CD rebuild triggered
 - 2 files changed (+95, -20 lines)
 - Lint: 0 errors, 2 warnings (pre-existing)
+
+---
+Task ID: cleanup-tripay
+Agent: Main Agent
+Task: Hapus Tripay/QRIS secara bersih dari seluruh codebase
+
+Work Log:
+- Tripay menutup pendaftaran pengguna baru — semua code Tripay/QRIS harus dihapus
+- File dihapus: src/lib/qris-service.ts, src/components/erp/TripaySettingsTab.tsx, src/app/api/payments/qris/ (2 route files)
+- Model QrisPayment dihapus dari prisma/schema.prisma
+- SettingsModule.tsx: Hapus import TripaySettingsTab, hapus tab "Integrasi", hapus import CreditCard
+- SetupTab.tsx: Hapus setup item Tripay/QRIS, kurangi totalChecks dari 4→3, hapus isInfo prop dari SetupItemCard
+- status/route.ts: Hapus checkTripay(), hapus tripay dari SetupStatus interface, ganti checkSchema() dari cek qris_payments ke cek tabel kritis
+- middleware.ts: Hapus '/api/payments/qris/callback' dari PUBLIC_PATHS
+- settings/[key]/route.ts: Hapus tripay_config cache invalidation
+- .env.example: Hapus semua TRIPAY_* env vars
+- db-push/route.ts: Bersihkan komentar qris_payments
+
+Stage Summary:
+- 3 file dihapus, 8 file dimodifikasi
+- Prisma schema: QrisPayment model dihapus (tabel qris_payments akan di-drop saat db:push)
+- Lint: 0 errors, 0 new warnings
+- Tripay/QRIS 100% bersih dari seluruh codebase

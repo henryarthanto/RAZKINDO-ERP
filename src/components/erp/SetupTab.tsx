@@ -14,32 +14,18 @@ import {
   Loader2,
   RefreshCw,
   AlertTriangle,
-  ExternalLink,
   Eye,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { apiFetch } from '@/lib/api-client';
-
-interface SetupItem {
-  label: string;
-  description: string;
-  ok: boolean;
-  message: string;
-  action?: string;
-  actionEndpoint?: string;
-  actionLabel?: string;
-  warning?: string;
-}
 
 interface SetupStatus {
   schema: { ok: boolean; message: string };
   realtime: { ok: boolean; message: string };
   storage: { ok: boolean; message: string };
-  tripay: { ok: boolean; mode: string | null; message: string };
   imageMigration: { totalBase64: number; totalBase64SizeMB: string; message: string };
 }
 
@@ -115,12 +101,11 @@ export default function SetupTab() {
     );
   }
 
-  const totalChecks = 4;
+  const totalChecks = 3;
   const passedChecks = [
     setupStatus.schema.ok,
     setupStatus.realtime.ok,
     setupStatus.storage.ok,
-    setupStatus.tripay.ok,
   ].filter(Boolean).length;
 
   return (
@@ -160,10 +145,9 @@ export default function SetupTab() {
         <SetupItemCard
           icon={<Database className="w-4 h-4" />}
           label="Database Schema"
-          description="Tabel qris_payments"
+          description="Sinkronisasi struktur tabel database"
           ok={setupStatus.schema.ok}
           message={setupStatus.schema.message}
-          actionEndpoint="/api/setup/db-push"
           actionLabel="Push Schema"
           loading={loading === 'schema'}
           onAction={() => handleAction('/api/setup/db-push', 'Push Schema')}
@@ -176,7 +160,6 @@ export default function SetupTab() {
           description="Update data real-time di semua perangkat"
           ok={setupStatus.realtime.ok}
           message={setupStatus.realtime.message}
-          actionEndpoint="/api/setup/enable-realtime"
           actionLabel="Aktifkan Realtime"
           loading={loading === 'realtime'}
           onAction={() => handleAction('/api/setup/enable-realtime', 'Aktifkan Realtime')}
@@ -189,33 +172,9 @@ export default function SetupTab() {
           description="Penyimpanan gambar produk (Supabase Storage)"
           ok={setupStatus.storage.ok}
           message={setupStatus.storage.message}
-          actionEndpoint="/api/setup/create-storage-bucket"
           actionLabel="Buat Bucket"
           loading={loading === 'storage'}
           onAction={() => handleAction('/api/setup/create-storage-bucket', 'Buat Bucket')}
-        />
-
-        {/* 4. Tripay / QRIS */}
-        <SetupItemCard
-          icon={
-            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
-              <path d="M3 3h18v18H3V3zm2 2v14h14V5H5zm2 2h10v2H7V7zm0 4h7v2H7v-2z" />
-            </svg>
-          }
-          label="QRIS Payment (Tripay)"
-          description={`Pembayaran QRIS — ${setupStatus.tripay.mode === 'production' ? 'Production' : setupStatus.tripay.mode || 'Belum dikonfigurasi'}`}
-          ok={setupStatus.tripay.ok}
-          message={setupStatus.tripay.message}
-          actionEndpoint={undefined}
-          actionLabel="Buka Tab Integrasi"
-          loading={false}
-          onAction={() => {
-            // Navigate to integrasi tab - find the parent tabs and switch
-            const event = new CustomEvent('switch-settings-tab', { detail: 'integrasi' });
-            window.dispatchEvent(event);
-            toast.info('Buka tab Integrasi untuk mengatur Tripay');
-          }}
-          isInfo
         />
       </div>
 
@@ -309,8 +268,6 @@ export default function SetupTab() {
 }
 
 // Reusable setup item card
-import { Label } from '@/components/ui/label';
-
 function SetupItemCard({
   icon,
   label,
@@ -320,7 +277,6 @@ function SetupItemCard({
   actionLabel,
   loading,
   onAction,
-  isInfo,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -330,7 +286,6 @@ function SetupItemCard({
   actionLabel?: string;
   loading?: boolean;
   onAction?: () => void;
-  isInfo?: boolean;
 }) {
   return (
     <Card className={!ok ? 'border-dashed' : ''}>
@@ -355,7 +310,6 @@ function SetupItemCard({
           </div>
           {actionLabel && onAction && (
             <Button
-              variant={isInfo ? 'outline' : 'default'}
               size="sm"
               onClick={onAction}
               disabled={loading}
@@ -363,8 +317,6 @@ function SetupItemCard({
             >
               {loading ? (
                 <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-              ) : isInfo ? (
-                <ExternalLink className="w-3 h-3 mr-1" />
               ) : null}
               {actionLabel}
             </Button>

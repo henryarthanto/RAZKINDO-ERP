@@ -4,11 +4,8 @@ import { enforceSuperAdmin } from '@/lib/require-auth';
 /**
  * POST /api/setup/db-push
  *
- * Push the Prisma schema to the database to create missing tables
- * (e.g., qris_payments). Also drops tables that no longer exist in the schema.
- *
- * Uses `npx prisma db push --accept-data-loss` which connects via DATABASE_URL.
- * Falls back to direct SQL for dropping orphaned tables if prisma fails.
+ * Push the Prisma schema to the database to create/align missing tables.
+ * Uses DIRECT_URL for direct DB connection (bypasses PgBouncer which blocks DDL).
  */
 export async function POST(request: NextRequest) {
   try {

@@ -947,28 +947,3 @@ model FinanceLedger {
   @@index([createdAt])
   @@map("finance_ledger")
 }
-
-// =====================================================================
-// QRIS PAYMENTS (Tripay Integration)
-// =====================================================================
-
-model QrisPayment {
-  id            String    @id @default(cuid())
-  transactionId String    @map("transaction_id")
-  reference     String    @unique
-  merchantRef   String    @map("merchant_ref")
-  amount        Decimal   @db.Decimal(15, 2)
-  status        String    @default("pending")
-  qrUrl         String?   @map("qr_url")
-  checkoutUrl   String?   @map("checkout_url")
-  expiredTime   DateTime  @map("expired_time")
-  paidAmount    Decimal?  @map("paid_amount") @db.Decimal(15, 2)
-  paidAt        DateTime? @map("paid_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-
-  @@index([transactionId])
-  @@index([reference])
-  @@index([status])
-  @@map("qris_payments")
-}
