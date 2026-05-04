@@ -712,3 +712,23 @@ Stage Summary:
 - All remaining roadmap items completed
 - Full roadmap (Week 1 → Month 3) now 100% implemented
 - CI/CD will auto-rebuild Docker image on push
+
+---
+Task ID: fix-pwa-unauthorized
+Agent: Main Agent
+Task: Fix PWA pelanggan unauthorized error
+
+Work Log:
+- Investigated PWA customer page at /c/[code] which calls /api/pwa/[code]/* endpoints
+- Found middleware PUBLIC_PATHS had '/api/c/[code]/' but actual API routes are at '/api/pwa/[code]/'
+- This caused ALL PWA customer API calls (products, orders, referrals, etc.) to be blocked by middleware returning 401 Unauthorized
+- Also found /api/settings was not in PUBLIC_PATHS — PWA customer page needs /api/settings?public=true for company logo/name
+- The settings route already handles auth internally (public=true returns only safe keys, otherwise requires auth)
+- Fixed: Changed '/api/c/[code]/' to '/api/pwa/[code]/' in PUBLIC_PATHS
+- Fixed: Added '/api/settings' to PUBLIC_PATHS
+
+Stage Summary:
+- Root cause: Middleware had wrong path pattern '/api/c/[code]/' instead of '/api/pwa/[code]/'
+- All PWA customer endpoints were blocked: /api/pwa/[code], /api/pwa/[code]/products, /api/pwa/[code]/orders, etc.
+- 1 file modified: src/middleware.ts (2 insertions, 1 deletion)
+- Commit: 6d2dc3e pushed to GitHub
