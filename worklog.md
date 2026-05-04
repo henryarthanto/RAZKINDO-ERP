@@ -663,3 +663,52 @@ Stage Summary:
 - 10 new files created, 8 existing files modified
 - All Month 2-3 roadmap items implemented
 - CI/CD will auto-rebuild Docker image on push
+---
+Task ID: final-roadmap-cleanup
+Agent: Main Agent
+Task: Final roadmap items — virtual scrolling, Supabase Storage CDN, dead code cleanup
+
+Work Log:
+
+### 1. Virtual Scrolling
+- Installed @tanstack/react-virtual@3.13.24
+- Created src/components/ui/virtual-list.tsx with two components:
+  - VirtualGrid: CSS grid layout (for products), row-based virtualization
+  - VirtualTable: List layout (for transactions), item-based virtualization
+- ProductsModule: auto-switches to VirtualGrid when products.length > 30
+- Normal CSS grid for ≤30 products (avoids overhead)
+
+### 2. Supabase Storage Image Upload
+- Created src/lib/image-upload.ts:
+  - uploadProductImage(): File → Supabase Storage CDN URL
+  - uploadBase64Image(): base64 data URL → CDN URL
+  - deleteProductImage(): remove from storage
+  - isBase64Image(): detect base64 vs CDN URL
+  - getBase64Size(): calculate base64 byte size
+- Created /api/products/upload-image: multipart form upload endpoint
+- Created /api/products/migrate-images: batch migration endpoint
+  - GET: dry run (count base64 images + total size)
+  - POST: actual migration with progress tracking
+- Updated ProductsModule handleImageUpload:
+  - Tries CDN upload first, falls back to base64 if Storage unavailable
+  - Increased max file size from 2MB to 5MB
+  - Uses URL.createObjectURL for instant preview
+
+### 3. Dead Code Cleanup
+- Deleted 4 dead files (430 lines total):
+  - src/components/ui/toast.tsx (129 lines, zero imports)
+  - hooks/use-toast.ts (150 lines, dead pre-src duplicate)
+  - components/ui/toast.tsx (129 lines, dead pre-src duplicate)
+  - components/ui/toaster.tsx (25 lines, dead pre-src duplicate)
+- Verified zero remaining imports before deletion
+
+### Lint & Push
+- Lint: 0 errors, 2 warnings (expected React Compiler + TanStack Virtual)
+- Dev server: healthy
+- Pushed: commit bc3b862
+
+Stage Summary:
+- 11 files changed (+845 lines, -497 lines)
+- All remaining roadmap items completed
+- Full roadmap (Week 1 → Month 3) now 100% implemented
+- CI/CD will auto-rebuild Docker image on push
