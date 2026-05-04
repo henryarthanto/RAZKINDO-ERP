@@ -862,3 +862,40 @@ Stage Summary:
 - db-push route deleted entirely
 - Lint: 0 errors, 2 pre-existing warnings (TanStack Virtual)
 - CI/CD rebuild triggered on push
+
+---
+Task ID: remove-setup-integrasi
+Agent: Main Agent
+Task: Remove Integrasi and Setup tabs from Settings (Pengaturan) + comprehensive bug audit
+
+Work Log:
+- Removed Setup tab from SettingsModule.tsx:
+  - Removed SetupTab import
+  - Removed Rocket icon import (unused after Setup removal)
+  - Removed Setup SelectItem from mobile dropdown
+  - Removed Setup TabsTrigger from desktop tabs
+  - Removed setup TabsContent
+- Deleted src/components/erp/SetupTab.tsx
+- Deleted setup API routes:
+  - src/app/api/setup/enable-realtime/route.ts
+  - src/app/api/setup/create-storage-bucket/route.ts
+  - src/app/api/setup/status/route.ts
+- Removed empty src/app/api/setup/ directory
+- Removed unused HardDrive icon import
+- Ran comprehensive bug audit via Explore agent:
+  - 0 broken imports found
+  - 0 dangling references to deleted features
+  - 134 API routes verified — none reference deleted modules
+  - Middleware PUBLIC_PATHS — all entries valid
+  - Prisma schema — clean (no PushSubscription/QrisPayment models)
+  - .env.example — clean (no VAPID/RESEND/TRIPAY references)
+  - Login page — clean
+  - All 45 component files — clean
+- Lint: 0 errors, 2 warnings (pre-existing TanStack Virtual warnings, not our code)
+- setup-schema route KEPT (still used by LoginPage for DB existence check)
+
+Stage Summary:
+- Setup tab completely removed from Settings/Pengaturan
+- 4 files deleted, 1 file modified (SettingsModule.tsx)
+- Zero bugs found in comprehensive audit
+- Lint clean: 0 errors
