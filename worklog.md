@@ -732,3 +732,24 @@ Stage Summary:
 - All PWA customer endpoints were blocked: /api/pwa/[code], /api/pwa/[code]/products, /api/pwa/[code]/orders, etc.
 - 1 file modified: src/middleware.ts (2 insertions, 1 deletion)
 - Commit: 6d2dc3e pushed to GitHub
+---
+Task ID: fix-pwa-kode-tidak-ditemukan
+Agent: Main Agent
+Task: Fix PWA customer "Kode Tidak Ditemukan" error
+
+Work Log:
+- User reported PWA pelanggan showing "Kode Tidak Ditemukan" error
+- Investigated middleware PUBLIC_PATHS matching logic
+- Found root cause: `'/api/pwa/[code]/'` in PUBLIC_PATHS is a LITERAL string
+- `pathname.startsWith('/api/pwa/[code]/')` returns FALSE for actual URLs like `/api/pwa/ABC123`
+- Because `[code]` is a Next.js route parameter, not matched by plain string comparison
+- Previous fix changed from `/api/c/[code]/` to `/api/pwa/[code]/` but never addressed the fundamental issue
+- All PWA customer API calls were being blocked by auth middleware → 401 → customer=null → "Kode Tidak Ditemukan"
+- Fix: Changed to `/api/pwa/` prefix which correctly matches ALL PWA routes via startsWith
+- Also consolidated `/api/pwa/icon` and `/api/pwa/manifest` into the single `/api/pwa/` prefix (redundant)
+- Lint: 0 errors, 2 warnings (pre-existing)
+
+Stage Summary:
+- Root cause: Literal `[code]` string in PUBLIC_PATHS never matched dynamic route URLs
+- Fix: Replaced `/api/pwa/[code]/` + `/api/pwa/icon` + `/api/pwa/manifest` with single `/api/pwa/` prefix
+- Commit: a891769 - pushed to GitHub, CI/CD rebuild triggered
