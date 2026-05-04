@@ -1190,16 +1190,6 @@ export default function ProductsModule() {
                           <Badge variant={isLow ? "destructive" : (isTracking ? "secondary" : "outline")}>
                             {isTracking ? displayStockStr : 'Nonaktif'}
                           </Badge>
-                          {isTracking && user?.role === 'super_admin' && (
-                            <InlineStockButtons
-                              product={p as any}
-                              isPerUnit={isPerUnit}
-                              selectedUnitId={selectedUnitId}
-                              onAdjust={(productId, qty, unitId) => {
-                                quickStockMutation.mutate({ productId, qty, type: qty > 0 ? 'in' : 'out', unitId });
-                              }}
-                            />
-                          )}
                           {user?.role === 'super_admin' && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -1253,6 +1243,20 @@ export default function ProductsModule() {
                       <span className="text-muted-foreground shrink-0">Harga Jual:</span>
                       <span className="font-medium text-primary min-w-0 truncate text-right">{formatCurrency((p as any).sellingPrice || 0)}</span>
                     </div>
+                    {/* Inline stock update buttons */}
+                    {isTracking && user?.role === 'super_admin' && (
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t">
+                        <span className="text-[11px] text-muted-foreground">Update Stok:</span>
+                        <InlineStockButtons
+                          product={p as any}
+                          isPerUnit={isPerUnit}
+                          selectedUnitId={selectedUnitId}
+                          onAdjust={(productId, qty, unitId) => {
+                            quickStockMutation.mutate({ productId, qty, type: qty > 0 ? 'in' : 'out', unitId });
+                          }}
+                        />
+                      </div>
+                    )}
                     {isLow && (p as any).hasAccess !== false && (
                       <Alert variant="destructive" className="mt-3 py-2">
                         <AlertTriangle className="h-4 w-4" />
@@ -1330,16 +1334,6 @@ export default function ProductsModule() {
                         <Badge variant={isLow ? "destructive" : (isTracking ? "secondary" : "outline")}>
                           {isTracking ? displayStockStr : 'Nonaktif'}
                         </Badge>
-                        {isTracking && user?.role === 'super_admin' && (
-                          <InlineStockButtons
-                            product={p}
-                            isPerUnit={isPerUnit}
-                            selectedUnitId={selectedUnitId}
-                            onAdjust={(productId, qty, unitId) => {
-                              quickStockMutation.mutate({ productId, qty, type: qty > 0 ? 'in' : 'out', unitId });
-                            }}
-                          />
-                        )}
                         {user?.role === 'super_admin' && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -1407,6 +1401,20 @@ export default function ProductsModule() {
                     <span className="text-muted-foreground shrink-0">Harga Jual:</span>
                     <span className="font-medium text-primary min-w-0 truncate text-right">{formatCurrency(p.sellingPrice || 0)}</span>
                   </div>
+                  {/* Inline stock update buttons */}
+                  {isTracking && user?.role === 'super_admin' && (
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t">
+                      <span className="text-[11px] text-muted-foreground">Update Stok:</span>
+                      <InlineStockButtons
+                        product={p}
+                        isPerUnit={isPerUnit}
+                        selectedUnitId={selectedUnitId}
+                        onAdjust={(productId, qty, unitId) => {
+                          quickStockMutation.mutate({ productId, qty, type: qty > 0 ? 'in' : 'out', unitId });
+                        }}
+                      />
+                    </div>
+                  )}
                   {isLow && p.hasAccess !== false && (
                     <Alert variant="destructive" className="mt-3 py-2">
                       <AlertTriangle className="h-4 w-4" />
