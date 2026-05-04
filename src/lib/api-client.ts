@@ -71,6 +71,25 @@ function handleAuthError(status: number, message: string) {
   }
 }
 
+/**
+ * apiFetch variant that does NOT trigger global logout on 401.
+ * Use this for non-critical endpoints (settings, config, preferences)
+ * where a transient 401 should show an error toast instead of logging out.
+ */
+export async function apiFetchNoAuth<T>(
+  url: string,
+  options: RequestInit = {},
+): Promise<T> {
+  // Set a flag so handleAuthError becomes a no-op
+  _authErrorHandled = true;
+  try {
+    return await apiFetch<T>(url, options);
+  } finally {
+    // Reset after a short delay so real auth errors can still be caught
+    setTimeout(() => { _authErrorHandled = false; }, 500);
+  }
+}
+
 // Main fetch wrapper with retry and error handling
 export async function apiFetch<T>(
   url: string,

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { apiFetch, ApiError } from '@/lib/api-client';
+import { apiFetch, apiFetchNoAuth, ApiError } from '@/lib/api-client';
 import {
   MessageSquare,
   RefreshCw,
@@ -199,7 +199,7 @@ _Mohon tim kurir segera memproses pesanan ini._`;
   const handleSaveConfig = async () => {
     setWaSaving(true);
     try {
-      await apiFetch('/api/whatsapp/config', {
+      await apiFetchNoAuth('/api/whatsapp/config', {
         method: 'PATCH',
         body: JSON.stringify({
           token: waToken,
@@ -219,7 +219,7 @@ _Mohon tim kurir segera memproses pesanan ini._`;
   const handleSaveTemplate = async () => {
     setTemplateSaving(true);
     try {
-      await apiFetch('/api/whatsapp/message-template', {
+      await apiFetchNoAuth('/api/whatsapp/message-template', {
         method: 'PATCH',
         body: JSON.stringify({ template })
       });

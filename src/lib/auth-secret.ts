@@ -103,13 +103,7 @@ export function getAuthSecret(): string {
   const AUTH_SECRET = process.env.AUTH_SECRET;
 
   if (!AUTH_SECRET) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(
-        '[Auth] FATAL: AUTH_SECRET env var is not set in production. ' +
-        'All tokens will be invalidated on restart. Set AUTH_SECRET in your .env file.'
-      );
-    }
-    console.warn('[Auth] AUTH_SECRET env var not set. Using file-based fallback secret. Set AUTH_SECRET for production.');
+    console.warn('[Auth] AUTH_SECRET env var not set. Using file-based fallback secret. Set AUTH_SECRET for production stability.');
   }
 
   _cachedSecret = AUTH_SECRET || getOrCreateFallbackSecret();

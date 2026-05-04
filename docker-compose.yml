@@ -18,6 +18,7 @@ services:
       - STB_MODE=true
       - NODE_ENV=production
       - PORT=3000
+      - AUTH_SECRET=razkindo-erp-auth-secret-2024-stable-key-do-not-change
     volumes:
       - erp-data:/app/db
       - erp-logs:/app/logs
