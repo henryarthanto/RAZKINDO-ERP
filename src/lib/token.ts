@@ -75,7 +75,10 @@ export function verifyAuthToken(authHeader: string | null): string | null {
     // Verify HMAC
     const payload = `${userId}:${timestamp}`;
     const expectedSig = crypto.createHmac('sha256', getAuthSecret()).update(payload).digest('hex');
-    if (signature !== expectedSig) return null;
+    // Timing-safe comparison to prevent timing attacks
+    const expectedBuf = Buffer.from(expectedSig, 'utf-8');
+    const actualBuf = Buffer.from(signature, 'utf-8');
+    if (actualBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(actualBuf, expectedBuf)) return null;
 
     return userId;
   } catch {

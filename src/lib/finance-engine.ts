@@ -120,9 +120,9 @@ async function creditPool(
     journalId,
     accountType: 'pool',
     accountKey: poolKey,
-    delta: Math.round(amount),
-    balanceBefore: Math.round(balanceBefore),
-    balanceAfter: Math.round(newBalance),
+    delta: Math.round(amount * 100) / 100,
+    balanceBefore: Math.round(balanceBefore * 100) / 100,
+    balanceAfter: Math.round(newBalance * 100) / 100,
     referenceType,
     referenceId,
     description,
@@ -153,9 +153,9 @@ async function debitPool(
     journalId,
     accountType: 'pool',
     accountKey: poolKey,
-    delta: -Math.round(amount),
-    balanceBefore: Math.round(balanceBefore),
-    balanceAfter: Math.round(newBalance),
+    delta: -Math.round(amount * 100) / 100,
+    balanceBefore: Math.round(balanceBefore * 100) / 100,
+    balanceAfter: Math.round(newBalance * 100) / 100,
     referenceType,
     referenceId,
     description,
@@ -187,9 +187,9 @@ async function creditPhysical(
     journalId,
     accountType,
     accountKey: accountId,
-    delta: Math.round(amount),
-    balanceBefore: Math.round(balanceBefore),
-    balanceAfter: Math.round(newBalance),
+    delta: Math.round(amount * 100) / 100,
+    balanceBefore: Math.round(balanceBefore * 100) / 100,
+    balanceAfter: Math.round(newBalance * 100) / 100,
     referenceType,
     referenceId,
     description,
@@ -221,9 +221,9 @@ async function debitPhysical(
     journalId,
     accountType,
     accountKey: accountId,
-    delta: -Math.round(amount),
-    balanceBefore: Math.round(balanceBefore),
-    balanceAfter: Math.round(newBalance),
+    delta: -Math.round(amount * 100) / 100,
+    balanceBefore: Math.round(balanceBefore * 100) / 100,
+    balanceAfter: Math.round(newBalance * 100) / 100,
     referenceType,
     referenceId,
     description,
@@ -291,8 +291,8 @@ async function doubleEntry(
 
     if (!error && data) {
       return {
-        debitResult: Math.round(Number(data.debit_result) || 0),
-        creditResult: Math.round(Number(data.credit_result) || 0),
+        debitResult: Math.round(Number(data.debit_result || 0) * 100) / 100,
+        creditResult: Math.round(Number(data.credit_result || 0) * 100) / 100,
       };
     }
 
@@ -394,7 +394,7 @@ async function getDerivedPoolBalances(): Promise<Record<string, number>> {
     if (!error && data && typeof data === 'object') {
       const balances: Record<string, number> = {};
       for (const [key, value] of Object.entries(data)) {
-        balances[key] = Math.round(Number(value) || 0);
+        balances[key] = Math.round((Number(value) || 0) * 100) / 100;
       }
       return balances;
     }
@@ -421,7 +421,7 @@ async function getDerivedPoolBalances(): Promise<Record<string, number>> {
   }
 
   for (const key of Object.keys(balances)) {
-    balances[key] = Math.round(balances[key]);
+    balances[key] = Math.round(balances[key] * 100) / 100;
   }
 
   return balances;
@@ -441,12 +441,12 @@ async function getDerivedPhysicalBalances(): Promise<{ bank: Record<string, numb
       const cashboxData = (data as any).cashbox;
       if (bankData && typeof bankData === 'object') {
         for (const [key, value] of Object.entries(bankData)) {
-          bankBalances[key] = Math.round(Number(value) || 0);
+          bankBalances[key] = Math.round((Number(value) || 0) * 100) / 100;
         }
       }
       if (cashboxData && typeof cashboxData === 'object') {
         for (const [key, value] of Object.entries(cashboxData)) {
-          cashboxBalances[key] = Math.round(Number(value) || 0);
+          cashboxBalances[key] = Math.round((Number(value) || 0) * 100) / 100;
         }
       }
       return { bank: bankBalances, cashbox: cashboxBalances };
@@ -480,8 +480,8 @@ async function getDerivedPhysicalBalances(): Promise<{ bank: Record<string, numb
     }
   }
 
-  for (const key of Object.keys(bankBalances)) bankBalances[key] = Math.round(bankBalances[key]);
-  for (const key of Object.keys(cashboxBalances)) cashboxBalances[key] = Math.round(cashboxBalances[key]);
+  for (const key of Object.keys(bankBalances)) bankBalances[key] = Math.round(bankBalances[key] * 100) / 100;
+  for (const key of Object.keys(cashboxBalances)) cashboxBalances[key] = Math.round(cashboxBalances[key] * 100) / 100;
 
   return { bank: bankBalances, cashbox: cashboxBalances };
 }
@@ -506,7 +506,7 @@ async function reconcile(): Promise<{
     const ledgerBalance = derivedPools[key] || 0;
     const actualBalance = await getPoolBalance(key);
     const diff = actualBalance - ledgerBalance;
-    poolComparison[key] = { ledger: ledgerBalance, actual: actualBalance, diff: Math.round(diff) };
+    poolComparison[key] = { ledger: ledgerBalance, actual: actualBalance, diff: Math.round(diff * 100) / 100 };
 
     if (Math.abs(diff) > 0.01) {
       issues.push({
@@ -514,7 +514,7 @@ async function reconcile(): Promise<{
         account: getPoolLabel(key),
         ledger: ledgerBalance,
         actual: actualBalance,
-        diff: Math.round(diff),
+        diff: Math.round(diff * 100) / 100,
       });
     }
   }
@@ -528,7 +528,7 @@ async function reconcile(): Promise<{
     const actualBal = Number(ba.balance) || 0;
     const diff = actualBal - ledgerBal;
     if (Math.abs(diff) > 0.01) {
-      issues.push({ type: 'bank_drift', account: `${ba.name} (${ba.id.slice(0, 8)})`, ledger: ledgerBal, actual: actualBal, diff: Math.round(diff) });
+      issues.push({ type: 'bank_drift', account: `${ba.name} (${ba.id.slice(0, 8)})`, ledger: ledgerBal, actual: actualBal, diff: Math.round(diff * 100) / 100 });
     }
   }
 
@@ -538,7 +538,7 @@ async function reconcile(): Promise<{
     const actualBal = Number(cb.balance) || 0;
     const diff = actualBal - ledgerBal;
     if (Math.abs(diff) > 0.01) {
-      issues.push({ type: 'cashbox_drift', account: `${cb.name} (${cb.id.slice(0, 8)})`, ledger: ledgerBal, actual: actualBal, diff: Math.round(diff) });
+      issues.push({ type: 'cashbox_drift', account: `${cb.name} (${cb.id.slice(0, 8)})`, ledger: ledgerBal, actual: actualBal, diff: Math.round(diff * 100) / 100 });
     }
   }
 

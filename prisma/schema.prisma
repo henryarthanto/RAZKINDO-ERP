@@ -13,9 +13,9 @@ model CustomRole {
   name        String   @unique
   description String?
   permissions String?  @db.Text
-  createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdById String   @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
   createdBy   User     @relation("CustomRoleCreator", fields: [createdById], references: [id])
   users       User[]
 

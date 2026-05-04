@@ -35,7 +35,8 @@ export async function GET(
       .maybeSingle();
 
     if (txError) {
-      return NextResponse.json({ error: txError.message }, { status: 500 });
+      console.error('Get tx DB error:', txError);
+      return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 
     if (!transaction) {
@@ -114,13 +115,17 @@ export async function PATCH(
       .maybeSingle();
 
     if (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 500 });
+      console.error('Auth user lookup error:', authError);
+      return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
     if (!authUserData || !authUserData.is_active || authUserData.status !== 'approved') {
       return NextResponse.json({ error: 'Akses ditolak' }, { status: 403 });
     }
+    // BUG FIX: Use effective roles to support custom roles
+    const { fetchEffectiveRolesFromDB } = await import('@/lib/role-permissions');
+    const effectiveRoles = await fetchEffectiveRolesFromDB(db, authUserId);
     const patchableRoles = ['super_admin', 'keuangan', 'sales'];
-    if (!patchableRoles.includes(authUserData.role)) {
+    if (!effectiveRoles.some((r: string) => patchableRoles.includes(r))) {
       return NextResponse.json({ error: 'Role tidak memiliki akses untuk mengubah transaksi' }, { status: 403 });
     }
 
@@ -131,7 +136,8 @@ export async function PATCH(
       .eq('id', id)
       .maybeSingle();
     if (existError) {
-      return NextResponse.json({ error: existError.message }, { status: 500 });
+      console.error('Transaction lookup error:', existError);
+      return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
     if (!existing) {
       return NextResponse.json(
@@ -176,7 +182,8 @@ export async function PATCH(
       .maybeSingle();
 
     if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
+      console.error('Update tx error:', updateError);
+      return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 
     return NextResponse.json({ transaction: toCamelCase(transaction) });

@@ -16,7 +16,10 @@ export async function POST(
     const authUserId = authResult.userId;
     const authUser = authResult.user;
 
-    if (authUser.role !== 'super_admin' && authUser.role !== 'keuangan') {
+    // BUG FIX: Use effective roles to support custom roles
+    const { fetchEffectiveRolesFromDB } = await import('@/lib/role-permissions');
+    const effectiveRoles = await fetchEffectiveRolesFromDB(db, authUserId);
+    if (!effectiveRoles.includes('super_admin') && !effectiveRoles.includes('keuangan')) {
       return NextResponse.json({ error: 'Hanya Super Admin atau Keuangan yang dapat menyetujui transaksi' }, { status: 403 });
     }
 
@@ -35,7 +38,8 @@ export async function POST(
       .maybeSingle();
 
     if (txError) {
-      return NextResponse.json({ error: txError.message }, { status: 500 });
+      console.error('Approve tx DB error:', txError);
+      return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 
     if (!transaction) {
@@ -193,20 +197,11 @@ export async function POST(
       profit: txCamel.totalProfit
     });
 
-    // Check for low stock alerts
+    // Check for low stock alerts — reuse already-fetched productLookup (fix N+1)
     for (const item of txCamel.items || []) {
-      const { data: product, error: productError } = await db
-        .from('products')
-        .select('id, name, global_stock, min_stock')
-        .eq('id', item.productId)
-        .maybeSingle();
-
-      if (productError) {
-        console.error('Low stock check product lookup error:', productError);
-        continue;
-      }
-
-      if (product && product.global_stock <= product.min_stock) {
+      const product = productLookup.get(item.productId);
+      if (!product) continue;
+      if (Number(product.global_stock) <= Number(product.min_stock)) {
         createEvent(db, 'stock_low', {
           productId: product.id,
           productName: product.name,
